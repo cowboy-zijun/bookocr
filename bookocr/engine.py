@@ -455,7 +455,7 @@ def extract_text_pages(pdf_path, page_range=None):
             if block.get('type') != 0:
                 continue
             for line in block.get('lines', []):
-                # 斜向/竖排水印（"能动学院实验教学中心"）不是正文：
+                # 斜向/竖排水印（如学校/机构名）不是正文：
                 # 文字层的 dir=(0.707,0.707)，不删会变成 38pt 大字。
                 if is_watermark_line(line):
                     continue
