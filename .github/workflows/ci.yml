@@ -1,0 +1,16 @@
+name: syntax
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Byte-compile
+        run: python -m compileall -q bookocr cli.py main.py
