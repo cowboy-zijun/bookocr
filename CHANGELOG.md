@@ -12,6 +12,7 @@
 - 实验报告 6×9 横排表；文字/嵌入图水印清洗。
 - `--fidelity`、`--layout-lock`（试验）。
 - 对象级回归：`python -m bookocr.regress`。
+- Document IR：`--format json/html` 输出结构化 JSON/独立 HTML；Word 仍是主出口。
 
 ### 已知边界
 

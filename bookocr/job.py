@@ -6,7 +6,7 @@ import os
 import re
 
 from . import align, engine, export, layout, table as tbl_mod, zones
-from . import pagedoc, table_ir
+from . import doc_ir, pagedoc, table_ir
 
 
 def _tabs_usable(tabs):
@@ -1560,6 +1560,24 @@ class Job:
                 % (_pb.count(), _pb.object_count()))
         blocks = _pb.to_blocks()
         page_geometries = _pb.geometry_map()
+        _fmts = set(self.opts.get('formats') or ['docx'])
+        if _fmts & {'html', 'json', 'all'}:
+            _ir = doc_ir.build_document_ir(
+                blocks, _pb, pages, style_maps=style_maps,
+                page_geometries=page_geometries,
+                page_numbers=page_numbers, page_sections=page_sections,
+                source=self.pdf_path)
+            _base = os.path.splitext(self.out_path)[0]
+            if _fmts & {'json', 'all'}:
+                _jp = _base + '.json'
+                with open(_jp, 'w', encoding='utf-8') as _f:
+                    _f.write(_ir.to_json())
+                say(u'IR JSON：%s' % _jp)
+            if _fmts & {'html', 'all'}:
+                _hp = _base + '.html'
+                with open(_hp, 'w', encoding='utf-8') as _f:
+                    _f.write(doc_ir.render_html(_ir, title=title))
+                say(u'HTML：%s' % _hp)
         counts = export.export_docx(blocks, self.out_path, title=title, notes=notes,
                                     appendix_from=appendix_from,
                                     page_numbers=page_numbers,

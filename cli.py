@@ -37,6 +37,9 @@ def main():
                     help=u'导出后用 Word 实排结果做逐页保真度量（较慢）')
     ap.add_argument('--layout-lock', action='store_true',
                     help=u'试验：文字层纯正文页按原书视觉行锁定断行（L3）')
+    ap.add_argument('--format', choices=['docx', 'html', 'json', 'all'],
+                    default='docx',
+                    help=u'额外输出：html/json/all（Word 仍会导出）')
     args = ap.parse_args()
 
     if args.check:
@@ -60,6 +63,8 @@ def main():
         'variants': 1 if args.fast else 3,
         'layout_model': True,
         'layout_lock': bool(args.layout_lock),
+        'formats': ([args.format] if args.format != 'all'
+                    else ['docx', 'html', 'json']),
         'mode': args.mode,
     }
     if args.pages:

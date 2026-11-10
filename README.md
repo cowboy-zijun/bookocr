@@ -96,6 +96,21 @@
 | `--layout-lock` | 文字层纯正文页 L3 锁行（试验） |
 | `--pages 1-20` | 只处理指定页 |
 | `--fast` | 单路 OCR，快但错字多；只用于试跑 |
+| `--format html/json/all` | 额外输出 IR HTML/JSON；Word 仍导出 |
+
+## 多个出口
+
+Word 是当前主出口，但不是唯一出口。`--format json/html` 会把同一份
+PageDoc/TableIR 转成结构化 IR 或独立 HTML：
+
+```powershell
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --format json
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --format html
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --format all
+```
+
+JSON 带页号、页几何、块 bbox、表格 merges、来源和置信度；HTML 用于阅读/检索。
+Word 仍会导出。
 
 ## 对象级回归
 
@@ -104,7 +119,7 @@ python -m bookocr.regress 输出.docx --pages 38 ^
   --tables 5x7,10x9,9x8,20x10,8x4,13x7 --images 32
 ```
 
-当前基线见 [docs/回归集.md](docs/回归集.md)。
+当前基线见 [docs/回归集.md](docs/回归集.md)；IR 结构见 [docs/IR.md](docs/IR.md)。
 
 ## 目录
 
