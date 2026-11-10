@@ -1,0 +1,24 @@
+# Third-party notices
+
+This repository contains only the BookOCR source code and documentation.
+It does **not** contain model weights, the portable runtime, or user PDFs/DOCX.
+
+Runtime dependencies (installed separately by the user via `requirements.txt`
+and `requirements-optional.txt`):
+
+- **PyMuPDF** — GNU Affero General Public License v3.0 or Artifex commercial
+  license. BookOCR is distributed under AGPL-3.0 accordingly.
+  <https://pymupdf.readthedocs.io/en/latest/license.html>
+- **RapidOCR (rapidocr-onnxruntime)** — Apache License 2.0.
+  <https://github.com/RapidAI/RapidOCR>
+- **RapidLayout (rapid-layout)** — Apache License 2.0.
+  <https://github.com/RapidAI/RapidLayout>
+- **python-docx** — MIT License.
+- **OpenCV / opencv-python** — Apache License 2.0.
+- Other transitive dependencies retain their own licenses.
+
+OCR/layout model weights are downloaded by the dependency packages or obtained
+separately; their licenses and terms are not granted by this repository. Check
+them before redistributing a packaged build.
+
+No fonts, scanned pages, or copyrighted sample books are included.

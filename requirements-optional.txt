@@ -1,0 +1,5 @@
+# 版面模型（识别标题 / 表格 / 图区域，默认启用）
+# 不装也能使用：程序会跳过模型，按版面树和文字坐标继续。
+#   .venv\Scripts\python.exe -m pip install -r requirements-optional.txt
+# 注意：paddlepaddle 目前没有 Python 3.14 的轮子，用 rapid-layout（ONNX 版）。
+rapid-layout>=1.2

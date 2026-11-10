@@ -1,0 +1,32 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Portable runtime and model caches
+runtime/
+models/
+*.onnx
+.cache/
+
+# BookOCR working directories / outputs
+_bookocr_工作目录/
+*_bookocr_工作目录/
+*.docx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.log
+运行日志.txt
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
