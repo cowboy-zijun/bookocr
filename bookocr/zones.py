@@ -482,8 +482,11 @@ def _label_node(node, page, page_h, body_size, foreign=False):
     if u'参考文献' in txt and not REF_HEAD.match(head):
         node['role'] = u'正文/参考'
         return
-    if page == 1 and b[1] < page_h * 0.30 and body_size \
-            and max(szs or [0]) >= body_size * 1.25:
+    # 题名/作者区不一定在第 1 页（期刊第 1 页常是 CNKI 封面，
+    # 论文题名在第 2 页）。只看“页面上部 + 明显大字号”，不要限 page==1。
+    if b[1] < page_h * 0.32 and body_size \
+            and max(szs or [0]) >= body_size * 1.25 \
+            and len(txt.strip()) <= 160:
         node['role'] = u'题名'
         return
     if any(w in txt for w in (u'摘要', u'关键词')):
@@ -492,7 +495,10 @@ def _label_node(node, page, page_h, body_size, foreign=False):
     if any(w in txt for w in META_WORDS):
         node['role'] = u'元数据'
         return
-    if b[1] < page_h * 0.075:
+    # 页眉只认“页顶 + 比正文小 + 短行”。第 2/3/4 页顶部的正文
+    # 续排（字号=正文、整栏宽）不是页眉，旧规则会把整栏开头丢掉。
+    if b[1] < page_h * 0.075 and body_size and sz < body_size * 0.92 \
+            and len(txt.strip()) <= 80:
         node['role'] = u'页眉'
         return
     if b[3] > page_h * 0.87 and body_size and sz < body_size * 0.98:
@@ -903,14 +909,16 @@ def paper_line_blocks(trees, pages=None, columns=2):
                  'right': _line_frame(right_leaves),
                  'front': front}
         frames.append(frame)
-        if p == 1 and front:
+        if front:
             # 首页刊眉被剔除后留下的页首空白：用空段落补，而不是改
-            # 节的上边距（否则第 2 页也会被推下去）。
-            tl = next((x for x in front if x.get('role') == u'题名'), None)
-            if tl and tl.get('bbox'):
-                gap = tl['bbox'][1] / 5000.0 * 813.0 - 32.4
-                if gap > 4:
-                    out.append(('vspace', str(round(gap, 1)), [], None, 0))
+            # 节的上边距（否则第 2 页也会被推下去）。第 2 页起的
+            # 题名/作者/摘要、页内大标题同样属于 front，不能丢。
+            if p == 1:
+                tl = next((x for x in front if x.get('role') == u'题名'), None)
+                if tl and tl.get('bbox'):
+                    gap = tl['bbox'][1] / 5000.0 * 813.0 - 32.4
+                    if gap > 4:
+                        out.append(('vspace', str(round(gap, 1)), [], None, 0))
             out.extend(_blocks_from_lines(_linearize(front), p))
         payload = {'page': p,
                    'left': frame['left'], 'right': frame['right']}
