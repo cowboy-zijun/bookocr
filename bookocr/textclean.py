@@ -75,4 +75,33 @@ def merge_sub_lines(lines):
         cand['x1'] = max(cand.get('x1', 0), l.get('x1', 0))
         cand['y0'] = min(cand.get('y0', 0), l.get('y0', 0))
         cand['y1'] = max(cand.get('y1', 0), l.get('y1', 0))
-    return out
+    # 第二类：不是"整行都是小字"，而是行里带一个上标 span
+    # （①。如何… / ②。）。PDF 会因为它位置抬高而切成独立行；
+    # 这类行应并回左侧主行，不能变成新段落/新行。
+    sup_out = []
+    for l in out:
+        spans = l.get('spans') or []
+        has_small = any((s.get('size') or 0) and
+                        float(s.get('size')) < body * 0.8 for s in spans)
+        if l.get('sep') or not has_small:
+            sup_out.append(l)
+            continue
+        cand = None
+        for o in out:
+            if o is l or o.get('sep'):
+                continue
+            if l.get('y1', 0) < o.get('y0', 0) - 4 or \
+                    l.get('y0', 0) > o.get('y1', 0) + 4:
+                continue
+            if o.get('x0', 0) <= l.get('x0', 0) <= o.get('x1', 0) + 15:
+                if cand is None or o.get('x1', 0) > cand.get('x1', 0):
+                    cand = o
+        if cand is None:
+            sup_out.append(l)
+            continue
+        cand['text'] = (cand.get('text') or '') + (l.get('text') or '')
+        cand['spans'] = list(cand.get('spans') or []) + list(l.get('spans') or [])
+        cand['x0'] = min(cand.get('x0', 0), l.get('x0', 0))
+        cand['x1'] = max(cand.get('x1', 0), l.get('x1', 0))
+        cand['y1'] = max(cand.get('y1', 0), l.get('y1', 0))
+    return sup_out
