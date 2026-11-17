@@ -6,7 +6,7 @@ import os
 import re
 
 from . import align, engine, export, layout, table as tbl_mod, zones
-from . import doc_ir, pagedoc, table_ir
+from . import doc_ir, pagedoc, review, table_ir
 
 
 def _tabs_usable(tabs):
@@ -1574,10 +1574,21 @@ class Job:
         else:
             say(u'PageDoc：%d 页，对象 %s'
                 % (_pb.count(), _pb.object_count()))
+        _rv = self.opts.get('review')
+        if _rv:
+            try:
+                _ra, _rs = review.apply_to_pagebook(_pb, _rv)
+                say(u'人工复核：采纳 %d 项，跳过 %d 项' %
+                    (len(_ra), len(_rs)))
+                for _sid, _why in _rs[:6]:
+                    say(u'  跳过 %s：%s' % (_sid, _why))
+            except Exception as _e:
+                say(u'人工复核应用失败：%s' % _e)
         blocks = _pb.to_blocks()
         page_geometries = _pb.geometry_map()
         _fmts = set(self.opts.get('formats') or ['docx'])
-        if _fmts & {'html', 'json', 'all'}:
+        _review_dir = self.opts.get('review_out')
+        if _fmts & {'html', 'json', 'all'} or _review_dir:
             _ir = doc_ir.build_document_ir(
                 blocks, _pb, pages, style_maps=style_maps,
                 page_geometries=page_geometries,
@@ -1602,6 +1613,12 @@ class Job:
                 with open(_hp, 'w', encoding='utf-8') as _f:
                     _f.write(doc_ir.render_html(_ir, title=title))
                 say(u'HTML：%s' % _hp)
+            if _review_dir:
+                os.makedirs(_review_dir, exist_ok=True)
+                _rvdata = review.build_review(_ir, self.pdf_path, _review_dir)
+                _rjp, _rhp = review.write_review(_rvdata, _review_dir)
+                say(u'人工复核：%d 项 -> %s（打开 %s）'
+                    % (len(_rvdata.get('items') or []), _rjp, _rhp))
         counts = export.export_docx(blocks, self.out_path, title=title, notes=notes,
                                     appendix_from=appendix_from,
                                     page_numbers=page_numbers,

@@ -112,6 +112,20 @@ PageDoc/TableIR 转成结构化 IR 或独立 HTML：
 JSON 带页号、页几何、块 bbox、表格 merges、来源和置信度；HTML 用于阅读/检索。
 Word 仍会导出。
 
+## 人工复核（无 AI）
+
+机器只产出候选，不静默改文档。低置信度块、缺失源行、整页截图会生成
+离线复核页；人看完原图后接受/拒绝/修正，只有已决定项在下次导出生效。
+
+```powershell
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --review-out .\复核
+# 打开 复核\review.html，导出 review.json
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --review .\复核\review.json
+```
+
+不建数据库、不接 AI；`review.json` 就是账本。详见
+[docs/人工复核.md](docs/人工复核.md)。
+
 ## 对象级回归
 
 ```powershell

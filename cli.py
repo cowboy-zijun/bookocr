@@ -37,6 +37,10 @@ def main():
                     help=u'导出后用 Word 实排结果做逐页保真度量（较慢）')
     ap.add_argument('--layout-lock', action='store_true',
                     help=u'试验：文字层纯正文页按原书视觉行锁定断行（L3）')
+    ap.add_argument('--review-out', metavar='DIR',
+                    help=u'生成人工复核目录（review.json + review.html + 裁剪图）')
+    ap.add_argument('--review', metavar='JSON',
+                    help=u'应用人工复核 review.json 后导出')
     ap.add_argument('--format', choices=['docx', 'html', 'json', 'all'],
                     default='docx',
                     help=u'额外输出：html/json/all（Word 仍会导出）')
@@ -65,6 +69,8 @@ def main():
         'layout_lock': bool(args.layout_lock),
         'formats': ([args.format] if args.format != 'all'
                     else ['docx', 'html', 'json']),
+        'review_out': args.review_out,
+        'review': args.review,
         'mode': args.mode,
     }
     if args.pages:
