@@ -202,7 +202,9 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
             for l in lines:
                 t = (l.get('text') or '').strip()
                 off = l['x0'] * m['scale'][0] - fx
-                if off >= max(4.0, fs * 0.95):
+                # 只有“接近两格”的缩进才是段首；行首 ①/引号/接排
+                # 可能因为上一行末标点而远离左边界，不能也加两格。
+                if fs * 0.8 <= off <= fs * 4.5:
                     t = u'\u3000\u3000' + t
                 texts.append(t)
             h = fr['bbox'][3] - fr['bbox'][1]
