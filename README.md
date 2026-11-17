@@ -112,6 +112,18 @@ PageDoc/TableIR 转成结构化 IR 或独立 HTML：
 JSON 带页号、页几何、块 bbox、表格 merges、来源和置信度；HTML 用于阅读/检索。
 Word 仍会导出。
 
+## 框模式（L4，文字层）
+
+整页先量外框，再量 front/左右栏/注文小框，按页面绝对坐标放 `framePr`；
+不走 Word `w:cols`，框与框之间不会互相挤压。
+
+```powershell
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --frame-mode
+```
+
+同时输出 `*.frames.json`：每页每个框的 bbox、字号、行距、行数。适用于文字层
+双栏/混合版式；图/表仍按对象处理，扫描页仍走 OCR 路径。
+
 ## 人工复核（无 AI）
 
 机器只产出候选，不静默改文档。低置信度块、缺失源行、整页截图会生成

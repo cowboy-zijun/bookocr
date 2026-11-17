@@ -41,6 +41,8 @@ def main():
                     help=u'生成人工复核目录（review.json + review.html + 裁剪图）')
     ap.add_argument('--review', metavar='JSON',
                     help=u'应用人工复核 review.json 后导出')
+    ap.add_argument('--frame-mode', action='store_true',
+                    help=u'L4 绝对框模式：量外框/左右栏/注文框，绝对定位导出（文字层）')
     ap.add_argument('--format', choices=['docx', 'html', 'json', 'all'],
                     default='docx',
                     help=u'额外输出：html/json/all（Word 仍会导出）')
@@ -56,6 +58,14 @@ def main():
 
     pdf = args.pdf
     out = args.out or os.path.splitext(pdf)[0] + u'_整理版.docx'
+    if args.frame_mode:
+        from bookocr import frame_export
+        jp = os.path.splitext(out)[0] + '.frames.json'
+        frame_export.export_frame_docx(pdf, out)
+        frame_export.write_frames_json(
+            frame_export.measure_pages(pdf), jp)
+        print(u'框模式完成：%s（测量：%s）' % (out, jp))
+        return
     work = os.path.join(os.path.dirname(out) or '.', '_bookocr_工作目录')
     opts = {
         # 论文模式也可能退回文字规则；双栏重排不能因此关掉。
