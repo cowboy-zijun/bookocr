@@ -763,8 +763,20 @@ class Job:
                             _tsz = 0
                         if not _bb:
                             continue
+                        # 论文模式里把真表也裁一份图：9 列窄表塞进半栏
+                        # 会被 Word 拉得很高，导致整页溢出/截图。用户已
+                        # 明确允许表格作为截图，图/表都按原矩形保留。
+                        _tpath = ''
+                        try:
+                            _tpath = engine.crop_region(
+                                self.pdf_path, _pno, list(_bb), _odir,
+                                dpi=200, suffix='tbl%02d' % len(_objs),
+                                doc=_odoc)
+                        except Exception:
+                            _tpath = ''
                         _objs.append({'kind': 'table', 'bbox': list(_bb),
-                                      'grid': _grid, 'size': _tsz})
+                                      'grid': _grid, 'size': _tsz,
+                                      'path': _tpath})
                     # 版面模型说是表格，但横线/文字都没还原出来：
                     # 截成表格图，至少保证内容完整，不整页截图
                     for _ri, _r in enumerate(_regs):
@@ -772,7 +784,8 @@ class Job:
                             continue
                         _bb = list(tbl_mod._layout_region_bbox(
                             _odoc[_pno - 1], _ls, _r, 3400.0, 5000.0))
-                        if any(_ovl(_bb, o['bbox']) >= 0.5
+                        if any(max(_ovl(_bb, o['bbox']),
+                                   _ovl(o['bbox'], _bb)) >= 0.5
                                for o in _objs if o['kind'] == 'table'):
                             continue
                         try:
@@ -795,7 +808,10 @@ class Job:
                         _figs = []
                     for _fi, _fb in enumerate(_figs):
                         _bb = list(_fb[:4])
-                        if any(_ovl(_bb, o['bbox']) >= 0.5
+                        # 大图框可能把同一区域的表格包进去：只要任一
+                        # 方向覆盖过半就视为重复，不能只算图框自身面积。
+                        if any(max(_ovl(_bb, o['bbox']),
+                                   _ovl(o['bbox'], _bb)) >= 0.5
                                for o in _objs):
                             continue
                         try:
@@ -1567,6 +1583,14 @@ class Job:
                 page_geometries=page_geometries,
                 page_numbers=page_numbers, page_sections=page_sections,
                 source=self.pdf_path)
+            _q = _ir.metadata.get('quality') or {}
+            say(u'IR 证据检查：%d 页 %d 块，缺源行 %d，整页图 %d，问题 %d'
+                % (_q.get('pages', 0), _q.get('blocks', 0),
+                   _q.get('missing_lines', 0), _q.get('fallback_pages', 0),
+                   _q.get('issues', 0)))
+            if _q.get('missing_lines') or _q.get('fallback_pages'):
+                say(u'[低置信度] 有内容未进入 block 或整页截图，详见 JSON 的 '
+                    u'missing/quality/validation')
             _base = os.path.splitext(self.out_path)[0]
             if _fmts & {'json', 'all'}:
                 _jp = _base + '.json'
@@ -1665,12 +1689,14 @@ class Job:
                     if paper_mode and paper_trees is not None:
                         _line_map = {}
                         for _lb in zones.paper_line_blocks(
-                                paper_trees, pages, columns=columns):
+                                paper_trees, pages, columns=columns,
+                                objects=paper_objects):
                             if _lb[0] == 'linepage':
                                 try:
                                     _pn = int(json.loads(_lb[1])['page'])
-                                    if _pn not in paper_objects:
-                                        _line_map[_pn] = _lb
+                                    # linepage 现在带 objects（图/表截图），
+                                    # 有对象的页也可以走行级文字回退。
+                                    _line_map[_pn] = _lb
                                 except Exception:
                                     pass
                         if all(_p in _line_map for _p in left2):

@@ -79,6 +79,10 @@ class BlockIR:
     confidence: float = 1.0
     table: Optional[dict] = None
     path: str = ''
+    engine: str = ''
+    bbox_reason: str = ''
+    provenance: dict = field(default_factory=dict)
+    fallback: str = ''
 
     def text(self):
         return ''.join(r.text for r in self.runs)
@@ -87,9 +91,15 @@ class BlockIR:
         d = {'id': self.id, 'type': self.type, 'bbox': self.bbox,
              'runs': [r.to_dict() for r in self.runs],
              'source': self.source,
-             'confidence': round(self.confidence, 3)}
+             'engine': self.engine or self.source,
+             'confidence': round(self.confidence, 3),
+             'provenance': self.provenance}
         if self.level:
             d['level'] = self.level
+        if self.bbox_reason:
+            d['bbox_reason'] = self.bbox_reason
+        if self.fallback:
+            d['fallback'] = self.fallback
         if self.table:
             d['table'] = self.table
         if self.path:
@@ -106,12 +116,16 @@ class PageIR:
     label: Optional[str] = None
     blocks: List[BlockIR] = field(default_factory=list)
     reading_order: List[str] = field(default_factory=list)
+    missing: List[dict] = field(default_factory=list)
+    quality: dict = field(default_factory=dict)
 
     def to_dict(self):
         return {'no': self.no, 'width': self.width, 'height': self.height,
                 'geometry': self.geometry, 'label': self.label,
                 'blocks': [b.to_dict() for b in self.blocks],
-                'reading_order': self.reading_order}
+                'reading_order': self.reading_order,
+                'missing': self.missing,
+                'quality': self.quality}
 
 
 @dataclass
@@ -127,6 +141,56 @@ class DocumentIR:
 
     def to_json(self, indent=2):
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
+
+    def validate(self):
+        """Return evidence/contract issues. Empty list = every block traceable.
+
+        This is deliberately a hard check, not a score: a text page with a
+        missing source line or a block without page/bbox/source/confidence is
+        a defect, not a formatting preference.
+        """
+        issues = []
+        ids = set()
+        for p in self.pages:
+            if not p.blocks:
+                issues.append({'page': p.no, 'kind': 'empty_page',
+                               'detail': 'no blocks'})
+            for b in p.blocks:
+                if not b.id or b.id in ids:
+                    issues.append({'page': p.no, 'kind': 'bad_id',
+                                   'detail': b.id})
+                ids.add(b.id)
+                if b.bbox is None:
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'missing_bbox',
+                                   'detail': b.bbox_reason or 'no source match'})
+                elif len(b.bbox) != 4:
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'bad_bbox', 'detail': str(b.bbox)})
+                if not (b.engine or b.source):
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'missing_engine'})
+                if not (0.0 <= float(b.confidence) <= 1.0):
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'bad_confidence',
+                                   'detail': str(b.confidence)})
+                if b.fallback == 'page_image' and b.confidence >= 0.5:
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'fallback_not_marked'})
+                if b.type == 'table':
+                    rows = (b.table or {}).get('rows') or []
+                    if not rows:
+                        issues.append({'page': p.no, 'block': b.id,
+                                       'kind': 'empty_table'})
+                if b.type == 'figure' and not b.path and b.bbox is None:
+                    issues.append({'page': p.no, 'block': b.id,
+                                   'kind': 'figure_without_evidence'})
+            for m in p.missing:
+                issues.append({'page': p.no, 'kind': 'missing_source_line',
+                               'text': m.get('text', '')[:80],
+                               'bbox': m.get('bbox'),
+                               'reason': m.get('reason', '')})
+        return issues
 
 
 def _page_char_owners(lines):
@@ -189,6 +253,72 @@ def _runs_for_block(text, mask, style_map):
     return runs
 
 
+def _text_block_from_lines(bid, lines, page_no, sty=None, level=0):
+    """Make one traceable block from a tree leaf/linepage frame."""
+    ls = [l for l in (lines or []) if (l.get("text") or "").strip()]
+    if not ls:
+        return None
+    text = "\n".join((l.get("text") or "") for l in ls)
+    runs = []
+    for l in ls:
+        rr = _runs_for_block(l.get("text") or "", [], sty)
+        if rr:
+            runs.extend(rr)
+            runs.append(RunIR("\n", 10.5, "", False, False, False, False, 1.0))
+    if runs and runs[-1].text == "\n":
+        runs.pop()
+    bbox = [round(min(l.get("x0", 0) for l in ls), 1),
+            round(min(l.get("y0", 0) for l in ls), 1),
+            round(max(l.get("x1", 0) for l in ls), 1),
+            round(max(l.get("y1", 0) for l in ls), 1)]
+    eng = "text_layer" if sty else "ocr"
+    conf = min([r.confidence for r in runs] or [1.0])
+    blk = BlockIR(bid, 'paragraph', bbox, runs, level, eng, conf,
+                  engine=eng)
+    blk.provenance = {'page': page_no, 'bbox': bbox, 'engine': eng,
+                      'source': eng}
+    return blk
+
+
+def _blocks_from_tree_node(node, page_no, prefix, sty, out):
+    if not isinstance(node, dict):
+        return
+    typ = node.get('type')
+    if typ == 'leaf':
+        b = _text_block_from_lines(prefix + 'l', node.get('lines') or [],
+                                    page_no, sty)
+        if b:
+            out.append(b)
+        return
+    if typ == 'object':
+        kind = node.get('kind')
+        bbox = node.get('bbox')
+        bb = list(bbox) if bbox and len(bbox) == 4 else None
+        if kind == 'table':
+            try:
+                tir = TableIR.from_data(node.get('grid') or {},
+                                        bbox=tuple(bb) if bb else None)
+                b = BlockIR(prefix + 't', 'table', bb, [], 0, 'table_ir',
+                            tir.quality, table=tir.to_data(),
+                            engine='table_ir')
+            except Exception:
+                b = BlockIR(prefix + 't', 'table', bb, [], 0, 'table_ir',
+                            0.3, table={'rows': []}, engine='table_ir',
+                            bbox_reason='bad_table_json')
+        else:
+            b = BlockIR(prefix + 'f', 'figure', bb, [], 0, 'image',
+                        1.0 if node.get('path') else 0.4,
+                        path=node.get('path') or '', engine='image')
+            if not node.get('path'):
+                b.bbox_reason = 'image_path_missing'
+        b.provenance = {'page': page_no, 'bbox': bb,
+                        'engine': b.engine, 'source': b.source}
+        out.append(b)
+        return
+    for i, ch in enumerate(node.get('children') or []):
+        _blocks_from_tree_node(ch, page_no, prefix + 'n%d' % i, sty, out)
+
+
 def build_document_ir(blocks, pagebook, pages, style_maps=None,
                       page_geometries=None, page_numbers=None,
                       page_sections=None, source='') -> DocumentIR:
@@ -220,9 +350,50 @@ def build_document_ir(blocks, pagebook, pages, style_maps=None,
             mask = b[2] or []
             if (b[1] or '').startswith(u'\ue000') and mask:
                 mask = mask[1:]
+            # 论文模式的 PageDoc 里是 frametree/linepage，不是普通
+            # 段落；必须把树里的 leaf/object 展开成可追溯 block。
+            if kind in ('frametree', 'linepage'):
+                try:
+                    payload = json.loads(text)
+                except Exception:
+                    payload = None
+                out = []
+                if isinstance(payload, dict):
+                    if kind == 'linepage':
+                        for _ci, _fr in (('l', payload.get('left')),
+                                         ('r', payload.get('right'))):
+                            if _fr:
+                                _b = _text_block_from_lines(
+                                    'p%d%s%s' % (pdoc.page_no, _ci, 'f'),
+                                    _fr.get('lines') or [], pdoc.page_no, sty)
+                                if _b:
+                                    out.append(_b)
+                        for _oi, _o in enumerate(payload.get('objects') or []):
+                            _bb = _o.get('bbox')
+                            _bb = list(_bb) if _bb and len(_bb) == 4 else None
+                            _b = BlockIR('p%do%d' % (pdoc.page_no, _oi + 1),
+                                         'figure', _bb, [], 0, 'image',
+                                         1.0 if _o.get('path') else 0.4,
+                                         path=_o.get('path') or '',
+                                         engine='image')
+                            _b.provenance = {'page': pdoc.page_no,
+                                             'bbox': _bb, 'engine': 'image',
+                                             'source': 'image'}
+                            out.append(_b)
+                    else:
+                        _blocks_from_tree_node(payload.get('node'),
+                                               pdoc.page_no,
+                                               'p%dt' % pdoc.page_no, sty, out)
+                for _b in out:
+                    pir.blocks.append(_b)
+                    pir.reading_order.append(_b.id)
+                continue
             typ, level = _kind_type(kind, b[4] if len(b) > 4 else 0)
             bid = 'p%db%d' % (pdoc.page_no, bi + 1)
             bbox = _bbox_for_text(text, char_str, owners)
+            bbox_reason = ''
+            if bbox is None:
+                bbox_reason = 'no_source_line_match'
             if kind == 'tablegrid':
                 bb = b[7] if len(b) > 7 else None
                 if bb:
@@ -233,19 +404,96 @@ def build_document_ir(blocks, pagebook, pages, style_maps=None,
                     data = {'rows': []}
                 tir = TableIR.from_data(data, bbox=tuple(bbox) if bbox else None)
                 blk = BlockIR(bid, 'table', bbox, [], 0, 'table_ir',
-                              tir.quality, table=tir.to_data())
+                              tir.quality, table=tir.to_data(),
+                              engine='table_ir')
+                if bbox is None:
+                    blk.bbox_reason = 'table_bbox_missing'
             elif kind in ('image', 'tablepage'):
                 bb = b[7] if len(b) > 7 else None
+                fb = 'page_image' if kind == 'tablepage' else ''
                 blk = BlockIR(bid, typ, list(bb) if bb else bbox, [], 0,
-                              'image', 1.0, path=text)
+                              'image', 0.0 if fb else (1.0 if text else 0.5),
+                              path=text, engine='image', fallback=fb)
+                if not text:
+                    blk.bbox_reason = 'image_path_missing'
+                elif bbox is None and not bb:
+                    blk.bbox_reason = 'image_bbox_missing'
             else:
                 runs = _runs_for_block(text, mask, sty)
                 conf = min([r.confidence for r in runs] or [1.0])
                 src = 'text_layer' if sty else 'ocr'
-                blk = BlockIR(bid, typ, bbox, runs, level, src, conf)
+                if bbox is None:
+                    conf = min(conf, 0.5)
+                blk = BlockIR(bid, typ, bbox, runs, level, src, conf,
+                              engine=src)
+            if bbox is not None and len(bbox) == 4:
+                blk.provenance = {'page': pdoc.page_no, 'bbox': bbox,
+                                  'engine': blk.engine or blk.source,
+                                  'source': blk.source}
+            else:
+                blk.provenance = {'page': pdoc.page_no, 'bbox': None,
+                                  'engine': blk.engine or blk.source,
+                                  'source': blk.source,
+                                  'reason': blk.bbox_reason or
+                                  'no_source_match'}
             pir.blocks.append(blk)
             pir.reading_order.append(bid)
+
+        # Evidence coverage: every source line must be represented by a block,
+        # a table bbox, or a figure bbox. Anything left is explicitly recorded
+        # with confidence 0 instead of being silently dropped.
+        covered = ''.join(_norm(b.text()) for b in pir.blocks
+                          if b.type not in ('table', 'figure'))
+        for b in pir.blocks:
+            if b.type == 'table' and b.table:
+                for row in (b.table.get('rows') or []):
+                    covered += ''.join(_norm(str(c)) for c in row)
+        page_area = 3400.0 * 5000.0
+        obj_boxes = []
+        for b in pir.blocks:
+            if b.type in ('table', 'figure') and b.bbox:
+                bb = b.bbox
+                area = max(0.0, (bb[2] - bb[0]) * (bb[3] - bb[1]))
+                if area < page_area * 0.60:
+                    obj_boxes.append(bb)
+        seen_missing = set()
+        for ln in lines:
+            t = _norm(ln.get('text') or '')
+            if not t or t in covered or t in seen_missing:
+                continue
+            cx = (ln.get('x0', 0) + ln.get('x1', 0)) / 2.0
+            cy = (ln.get('y0', 0) + ln.get('y1', 0)) / 2.0
+            if any(bb[0] - 4 <= cx <= bb[2] + 4 and
+                   bb[1] - 4 <= cy <= bb[3] + 4 for bb in obj_boxes):
+                continue
+            seen_missing.add(t)
+            pir.missing.append({
+                'text': (ln.get('text') or '')[:120],
+                'bbox': [round(ln.get('x0', 0), 1),
+                         round(ln.get('y0', 0), 1),
+                         round(ln.get('x1', 0), 1),
+                         round(ln.get('y1', 0), 1)],
+                'size': ln.get('size'),
+                'confidence': 0.0,
+                'reason': 'filtered_or_unmatched'})
+        fb = [b.fallback for b in pir.blocks if b.fallback]
+        confs = [b.confidence for b in pir.blocks] or [1.0]
+        pir.quality = {'block_count': len(pir.blocks),
+                       'missing_count': len(pir.missing),
+                       'min_confidence': round(min(confs), 3),
+                       'fallbacks': fb}
         doc.pages.append(pir)
+
+    issues = doc.validate()
+    doc.metadata['quality'] = {
+        'pages': len(doc.pages),
+        'blocks': sum(len(p.blocks) for p in doc.pages),
+        'missing_lines': sum(len(p.missing) for p in doc.pages),
+        'fallback_pages': sum(1 for p in doc.pages
+                              if p.quality.get('fallbacks')),
+        'issues': len(issues),
+    }
+    doc.metadata['validation'] = issues[:100]
     return doc
 
 
