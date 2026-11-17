@@ -91,6 +91,30 @@ def measure_pages(pdf_path, page_numbers=None):
                 'size': sorted(sizes)[len(sizes) // 2] if sizes else 9.0,
                 'pitch': (sum(dif) / len(dif) * sy) if dif else None,
             }
+        # 双栏正文上沿必须平齐：以两栏更高的上沿为公共 top。
+        frs = frames['frames']
+        if 'left' in frs and 'right' in frs:
+            top = min(frs['left']['bbox'][1], frs['right']['bbox'][1])
+            for _n in ('left', 'right'):
+                frs[_n]['bbox'][1] = top
+            frames['columns_top'] = top
+        # 量框间净间距，写进 frames.json，导出/核验都用同一组数。
+        def _gap(a, b):
+            return round(b['bbox'][1] - a['bbox'][3], 2)
+        frames['gaps'] = {}
+        if 'front' in frs and ('left' in frs or 'right' in frs):
+            bd = min((frs[n]['bbox'][1] for n in ('left', 'right')
+                      if n in frs), default=None)
+            if bd is not None:
+                frames['gaps']['front_body'] = round(bd - frs['front']['bbox'][3], 2)
+        if 'notes' in frs and ('left' in frs or 'right' in frs):
+            bb = max((frs[n]['bbox'][3] for n in ('left', 'right')
+                      if n in frs), default=None)
+            if bb is not None:
+                frames['gaps']['body_notes'] = round(frs['notes']['bbox'][1] - bb, 2)
+        if 'left' in frs and 'right' in frs:
+            frames['gaps']['left_right'] = round(
+                frs['right']['bbox'][0] - frs['left']['bbox'][2], 2)
         out[pno] = frames
     doc.close()
     return out
@@ -235,6 +259,8 @@ def write_frames_json(measured, path):
                            'pitch': round(v['pitch'], 2) if v['pitch'] else None,
                            'n': len(v['lines'])}
                        for k, v in m['frames'].items()},
+            'columns_top': m.get('columns_top'),
+            'gaps': m.get('gaps') or {},
         }
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
