@@ -189,48 +189,68 @@ def _scale90(run):
 
 
 def _line_runs(line, fs):
-    """Preserve span size and mark small/raised citation markers as superscript."""
+    """Preserve span size and classify its vertical position.
+
+    sup/sub is geometric, not just "small font": a small span above the
+    line center is a superscript; below is a subscript; on the baseline is
+    normal punctuation.
+    """
     spans = line.get('spans') or []
     out = []
-    for s in spans:
-        t = s.get('text') or ''
+    ly0 = float(line.get('y0') or 0)
+    ly1 = float(line.get('y1') or 0)
+    lmid = (ly0 + ly1) / 2.0
+    lh = max(1.0, ly1 - ly0)
+    for sp in spans:
+        t = sp.get('text') or ''
         if not t.strip():
             continue
-        sz = float(s.get('size') or fs)
-        sup = sz < fs * 0.86
-        out.append([t, sz, sup])
+        sz = float(sp.get('size') or fs)
+        smid = (float(sp.get('y0') or ly0) + float(sp.get('y1') or ly1)) / 2.0
+        small = sz < fs * 0.86
+        sup = bool(small and smid < lmid - lh * 0.03)
+        sub = bool(small and smid > lmid + lh * 0.03)
+        out.append([t, sz, sup, sub])
     if not out:
         t = line.get('text') or ''
         if t.strip():
-            out = [[t, fs, False]]
+            out = [[t, fs, False, False]]
     return out
 
 
 _MARK_RE = re.compile(u'^[①-⑳]')
+_CLOSE_PUNCT = set(u'。，、；：！？）】》”’…')
 
 
 def _merge_line_markers(lines_runs):
-    """Move a leading ①-⑳ from a continuation line to the previous line.
+    """Move a leading marker + following closing punctuation to prev line.
 
-    PDF line breaks often put a superscript marker at the beginning of the
-    next line; it belongs to the end of the previous line, not to a line of
-    its own.
+    A line that starts with ④/① or "。" is a continuation of the previous
+    visual line; it must not look like a new paragraph or start with a lone
+    punctuation mark.
     """
     for i in range(1, len(lines_runs)):
         cur = lines_runs[i]
         if not cur:
             continue
-        m = _MARK_RE.match(cur[0][0])
-        if not m:
-            continue
-        mark = m.group(0)
-        cur[0][0] = cur[0][0][len(mark):]
-        if not cur[0][0]:
-            cur.pop(0)
+        moved = []
+        first = cur[0]
+        m = _MARK_RE.match(first[0])
+        if m:
+            mark = m.group(0)
+            first[0] = first[0][len(mark):]
+            moved.append([mark, first[1], True, False])
+            if not first[0]:
+                cur.pop(0)
         if cur:
-            prev = lines_runs[i - 1]
-            prev.append([mark, lines_runs[i - 1][0][1] if prev else 9.0,
-                         True])
+            f = cur[0]
+            if f[0] and f[0][0] in _CLOSE_PUNCT:
+                moved.append([f[0][0], f[1], f[2], f[3]])
+                f[0] = f[0][1:]
+                if not f[0]:
+                    cur.pop(0)
+        if moved:
+            lines_runs[i - 1].extend(moved)
     return lines_runs
 
 
@@ -251,13 +271,15 @@ def _para_runs(doc, lines, bbox, size, pitch, align):
         if not first:
             p.add_run().add_break()
         first = False
-        for text, sz, sup in runs:
+        for text, sz, sup, sub in runs:
             if not text:
                 continue
             r = p.add_run(text)
             r.font.size = Pt(sz)
             if sup:
                 r.font.superscript = True
+            if sub:
+                r.font.subscript = True
             r.font.name = 'Times New Roman'
             r._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
             _scale90(r)
@@ -356,6 +378,7 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
                         and _is_para_start(t) and runs:
                     runs[0][0] = u'\u3000\u3000' + runs[0][0]
                 lines_runs.append(runs)
+            lines_runs = _merge_line_markers(lines_runs)
             h = fr['bbox'][3] - fr['bbox'][1]
             pitch = min(fr['pitch'] or fr['size'] * 1.15,
                         h / max(1, len(lines_runs)))
