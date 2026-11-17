@@ -24,6 +24,21 @@ def _norm(s):
     return re.sub(r'\s+', '', s or '')
 
 
+_BAD_PARA_START = set(u'。，、；：！？）】》”’…—,.;:!?)]}')
+
+
+def _is_para_start(text):
+    """Conservative: don't call a continuation/marker line a paragraph."""
+    t = _norm(text)
+    if not t:
+        return False
+    if t[0] in _BAD_PARA_START:
+        return False
+    if re.match(u'^[①-⑳⒈-⒚⑴-⒇]', t):
+        return False
+    return True
+
+
 def _bbox(lines):
     return [min(l['x0'] for l in lines), min(l['y0'] for l in lines),
             max(l['x1'] for l in lines), max(l['y1'] for l in lines)]
@@ -228,7 +243,9 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
                 off = l['x0'] * m['scale'][0] - fx
                 # 只有“接近两格”的缩进才是段首；行首 ①/引号/接排
                 # 可能因为上一行末标点而远离左边界，不能也加两格。
-                if fs * 0.8 <= off <= fs * 4.5:
+                # 两格缩进的合理范围约 1.2–3 个正文字宽；用框的
+                # 正文字号，不用该行字号（上标/标题不会改变缩进量）。
+                if fs * 1.2 <= off <= fs * 3.0 and _is_para_start(t):
                     t = u'\u3000\u3000' + t
                 texts.append(t)
             h = fr['bbox'][3] - fr['bbox'][1]
