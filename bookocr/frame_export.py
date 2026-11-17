@@ -188,6 +188,82 @@ def _scale90(run):
     rPr.append(w)
 
 
+def _line_runs(line, fs):
+    """Preserve span size and mark small/raised citation markers as superscript."""
+    spans = line.get('spans') or []
+    out = []
+    for s in spans:
+        t = s.get('text') or ''
+        if not t.strip():
+            continue
+        sz = float(s.get('size') or fs)
+        sup = sz < fs * 0.86
+        out.append([t, sz, sup])
+    if not out:
+        t = line.get('text') or ''
+        if t.strip():
+            out = [[t, fs, False]]
+    return out
+
+
+_MARK_RE = re.compile(u'^[①-⑳]')
+
+
+def _merge_line_markers(lines_runs):
+    """Move a leading ①-⑳ from a continuation line to the previous line.
+
+    PDF line breaks often put a superscript marker at the beginning of the
+    next line; it belongs to the end of the previous line, not to a line of
+    its own.
+    """
+    for i in range(1, len(lines_runs)):
+        cur = lines_runs[i]
+        if not cur:
+            continue
+        m = _MARK_RE.match(cur[0][0])
+        if not m:
+            continue
+        mark = m.group(0)
+        cur[0][0] = cur[0][0][len(mark):]
+        if not cur[0][0]:
+            cur.pop(0)
+        if cur:
+            prev = lines_runs[i - 1]
+            prev.append([mark, lines_runs[i - 1][0][1] if prev else 9.0,
+                         True])
+    return lines_runs
+
+
+def _para_runs(doc, lines, bbox, size, pitch, align):
+    p = doc.add_paragraph()
+    p.alignment = align
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    pf.line_spacing = Pt(max(6.0, float(pitch or size * 1.15)))
+    _set_frame(p, bbox[0], bbox[1],
+               max(20.0, bbox[2] - bbox[0]),
+               max(10.0, bbox[3] - bbox[1]))
+    first = True
+    for runs in lines:
+        if not runs:
+            continue
+        if not first:
+            p.add_run().add_break()
+        first = False
+        for text, sz, sup in runs:
+            if not text:
+                continue
+            r = p.add_run(text)
+            r.font.size = Pt(sz)
+            if sup:
+                r.font.superscript = True
+            r.font.name = 'Times New Roman'
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            _scale90(r)
+    return p
+
+
 def _para(doc, texts, bbox, size, pitch, align, bold=False,
           first_indent=0.0):
     p = doc.add_paragraph()
@@ -269,32 +345,30 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
             lines = fr['lines']
             fx = fr['bbox'][0]
             fs = fr['size']
-            texts = []
+            lines_runs = []
             for l in lines:
+                runs = _line_runs(l, fs)
                 t = (l.get('text') or '').strip()
                 off = l['x0'] * m['scale'][0] - fx
-                # 只有“接近两格”的缩进才是段首；行首 ①/引号/接排
-                # 可能因为上一行末标点而远离左边界，不能也加两格。
-                # 只认可信的 x0 段首簇；不用固定阈值，也不让
-                # ①/引号/接排行的孤立偏移变成段首。
+                # 只认可信的 x0 段首簇；不用固定阈值。
                 _ind = fr.get('indent_pt') or 0.0
                 if _ind and abs(off - _ind) <= max(1.5, fs * 0.35) \
-                        and _is_para_start(t):
-                    t = u'\u3000\u3000' + t
-                texts.append(t)
+                        and _is_para_start(t) and runs:
+                    runs[0][0] = u'\u3000\u3000' + runs[0][0]
+                lines_runs.append(runs)
             h = fr['bbox'][3] - fr['bbox'][1]
             pitch = min(fr['pitch'] or fr['size'] * 1.15,
-                        h / max(1, len(texts)))
-            _para(doc, texts, fr['bbox'], fr['size'], pitch,
-                  WD_ALIGN_PARAGRAPH.LEFT)
+                        h / max(1, len(lines_runs)))
+            _para_runs(doc, lines_runs, fr['bbox'], fr['size'], pitch,
+                       WD_ALIGN_PARAGRAPH.LEFT)
         fr = m['frames'].get('notes')
         if fr:
-            texts = [l.get('text') for l in fr['lines']]
+            runs = [_line_runs(l, fr['size']) for l in fr['lines']]
             h = fr['bbox'][3] - fr['bbox'][1]
             pitch = min(fr['pitch'] or fr['size'] * 1.15,
-                        h / max(1, len(texts)))
-            _para(doc, texts, fr['bbox'],
-                  fr['size'], pitch, WD_ALIGN_PARAGRAPH.LEFT)
+                        h / max(1, len(runs)))
+            _para_runs(doc, runs, fr['bbox'], fr['size'], pitch,
+                       WD_ALIGN_PARAGRAPH.LEFT)
         if idx < len(nums) - 1:
             doc.add_page_break()
     doc.save(out_path)
