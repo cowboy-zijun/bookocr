@@ -44,6 +44,30 @@ def _bbox(lines):
             max(l['x1'] for l in lines), max(l['y1'] for l in lines)]
 
 
+def _indent_cluster(lines, frame_x, scale, size):
+    """Find the paragraph-indent cluster from line x0 offsets.
+
+    Returns (indent_pt, units, support).  Only a real cluster (>=2 lines)
+    is accepted; a lone ①/marker stays an outlier.
+    """
+    vals = []
+    for l in lines:
+        off = l['x0'] * scale - frame_x
+        u = off / size if size else 0.0
+        if 0.7 <= u <= 4.0:
+            vals.append((off, u))
+    if len(vals) < 2:
+        return 0.0, 0.0, 0
+    us = sorted(v[1] for v in vals)
+    # median is robust against one marker line far to the right
+    med = us[len(us) // 2]
+    near = [v for v in vals if abs(v[1] - med) <= 0.55]
+    if len(near) < 2:
+        return 0.0, 0.0, 0
+    return (sum(v[0] for v in near) / len(near),
+            sum(v[1] for v in near) / len(near), len(near))
+
+
 def measure_pages(pdf_path, page_numbers=None):
     """Return measured frames for text-layer pages.
 
@@ -108,6 +132,14 @@ def measure_pages(pdf_path, page_numbers=None):
             }
         # 双栏正文上沿必须平齐：以两栏更高的上沿为公共 top。
         frs = frames['frames']
+        for _n in ('left', 'right'):
+            if _n in frs:
+                _fr = frs[_n]
+                _ip, _iu, _nsup = _indent_cluster(
+                    _fr['lines'], _fr['bbox'][0], sx, _fr['size'])
+                _fr['indent_pt'] = round(_ip, 2)
+                _fr['indent_units'] = round(_iu, 2)
+                _fr['indent_support'] = _nsup
         if 'left' in frs and 'right' in frs:
             top = min(frs['left']['bbox'][1], frs['right']['bbox'][1])
             for _n in ('left', 'right'):
@@ -243,9 +275,11 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
                 off = l['x0'] * m['scale'][0] - fx
                 # 只有“接近两格”的缩进才是段首；行首 ①/引号/接排
                 # 可能因为上一行末标点而远离左边界，不能也加两格。
-                # 两格缩进的合理范围约 1.2–3 个正文字宽；用框的
-                # 正文字号，不用该行字号（上标/标题不会改变缩进量）。
-                if fs * 1.2 <= off <= fs * 3.0 and _is_para_start(t):
+                # 只认可信的 x0 段首簇；不用固定阈值，也不让
+                # ①/引号/接排行的孤立偏移变成段首。
+                _ind = fr.get('indent_pt') or 0.0
+                if _ind and abs(off - _ind) <= max(1.5, fs * 0.35) \
+                        and _is_para_start(t):
                     t = u'\u3000\u3000' + t
                 texts.append(t)
             h = fr['bbox'][3] - fr['bbox'][1]
@@ -274,7 +308,10 @@ def write_frames_json(measured, path):
             'page_w': m['page_w'], 'page_h': m['page_h'],
             'frames': {k: {'bbox': v['bbox'], 'size': v['size'],
                            'pitch': round(v['pitch'], 2) if v['pitch'] else None,
-                           'n': len(v['lines'])}
+                           'n': len(v['lines']),
+                           'indent_pt': v.get('indent_pt'),
+                           'indent_units': v.get('indent_units'),
+                           'indent_support': v.get('indent_support')}
                        for k, v in m['frames'].items()},
             'columns_top': m.get('columns_top'),
             'gaps': m.get('gaps') or {},
