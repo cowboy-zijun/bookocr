@@ -61,8 +61,8 @@ def measure_pages(pdf_path, page_numbers=None):
         # 题名/摘要跨中缝，不能用来推正文起点。
         cand = [l['y0'] for l in bodyall
                 if len(_norm(l.get('text') or '')) >= 8 and
-                ((l['x0'] < mid - 150 and l['x1'] < mid + 50)
-                 or l['x0'] > mid - 50)]
+                ((l['x0'] < mid - 150 and l['x1'] < mid - 8)
+                 or l['x0'] > mid + 8)]
         body_start = min(cand) if cand else (
             min((l['y0'] for l in bodyall), default=0))
         front = [l for l in bodyall if l['y0'] < body_start - 20]
@@ -117,20 +117,23 @@ def _scale90(run):
     rPr.append(w)
 
 
-def _para(doc, texts, bbox, size, pitch, align, bold=False, prefix=''):
+def _para(doc, texts, bbox, size, pitch, align, bold=False,
+          first_indent=0.0):
     p = doc.add_paragraph()
     p.alignment = align
     pf = p.paragraph_format
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
     pf.line_spacing = Pt(max(6.0, float(pitch or size * 1.15)))
+    if first_indent and first_indent > 0.5:
+        pf.first_line_indent = Pt(first_indent)
     _set_frame(p, bbox[0], bbox[1],
                max(20.0, bbox[2] - bbox[0]),
                max(10.0, bbox[3] - bbox[1]))
     first = True
     for t in texts:
-        t = (t or '').strip()
-        if not t:
+        t = (t or '')
+        if not t.strip():
             continue
         if not first:
             p.add_run().add_break()
@@ -182,7 +185,7 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
                     align = WD_ALIGN_PARAGRAPH.CENTER
                     bold = False
                 else:
-                    align = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    align = WD_ALIGN_PARAGRAPH.LEFT
                     bold = False
                 _para(doc, [t], [x, y, x + max(w, 40), y + max(h, 10)],
                       tsz, max(10.0, h), align, bold)
@@ -190,8 +193,18 @@ def export_frame_docx(pdf_path, out_path, pages=None, title=None):
             fr = m['frames'].get(name)
             if not fr:
                 continue
-            texts = [l.get('text') for l in fr['lines']]
-            # 行距不能超过框高/行数；否则 Word 的 atLeast 框会向下溢出。
+            # 首行缩进用两个全角空格写到行首，保持整个框一个段落，
+            # 避免多个 framePr 段落叠在同一坐标。
+            lines = fr['lines']
+            fx = fr['bbox'][0]
+            fs = fr['size']
+            texts = []
+            for l in lines:
+                t = (l.get('text') or '').strip()
+                off = l['x0'] * m['scale'][0] - fx
+                if off >= max(4.0, fs * 0.95):
+                    t = u'\u3000\u3000' + t
+                texts.append(t)
             h = fr['bbox'][3] - fr['bbox'][1]
             pitch = min(fr['pitch'] or fr['size'] * 1.15,
                         h / max(1, len(texts)))
