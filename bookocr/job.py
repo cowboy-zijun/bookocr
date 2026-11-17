@@ -923,7 +923,7 @@ class Job:
         # 快；期刊/报纸这类整本双栏的 PDF 全靠这一步保证阅读顺序）
         say(u'[1.95/4] 文字层双栏页按栏重排…')
         two_col_text = set()
-        if self.opts.get('two_column', True) and not paper_mode:
+        if self.opts.get('two_column', True):
             for _pno, _ls in pages.items():
                 if not _ls or not _ls[0].get('spans'):
                     continue
@@ -941,6 +941,13 @@ class Job:
         # 整本都是文字层双栏页（期刊/报纸）：Word 里也排双栏，
         # 否则两栏正文被压成一栏，页面大半留白、版式与原书对不上。
         columns = 2 if _all_two else 1
+        # 文字层双栏已按栏重排时，论文分区树若仍把左右栏按 y 合并，
+        # 会再次把两栏串成一行；此时以行/栏重排结果为准。
+        if paper_mode and paper_trees is not None and two_col_text \
+                and len(two_col_text) >= max(1, len(pages) - 1):
+            say(u'双栏重排与论文分区冲突：改用文字层双栏块（%d 页）'
+                % len(two_col_text))
+            paper_trees = None
         say(u'[2/4] 版面重建…')
         if paper_mode and paper_trees is not None:
             # 论文 1:1：直接消费分区树（band / columns / leaf），
@@ -1563,6 +1570,28 @@ class Job:
                     % len(_page_geoms))
         except Exception as _e:
             say(u'按页几何：分组失败，沿用全局版式（%s）' % _e)
+        # 文字层双栏 + 首页通栏标题/摘要：在关键词后插入 cols2，
+        # 让标题/摘要保持单栏，正文从下一行开始双栏；否则标题会被
+        # Word 塞进左栏。
+        if columns == 2 and two_col_text and not any(
+                b and b[0] in ('cols2', 'cols2page') for b in blocks):
+            _idx = None
+            for _i, _b in enumerate(blocks):
+                _t = (_b[1] or '') if _b and len(_b) > 1 else ''
+                if u'关键词' in _t:
+                    _idx = _i
+                    break
+            if _idx is None:
+                for _i, _b in enumerate(blocks):
+                    _t = (_b[1] or '') if _b and len(_b) > 1 else ''
+                    if u'摘要' in _t:
+                        _idx = _i
+                        break
+            if _idx is not None:
+                blocks = blocks[:_idx + 1] + [('cols2', '', [], None, 0)] + \
+                    blocks[_idx + 1:]
+                say(u'首页标题/摘要单栏，正文从关键词后开始双栏')
+
         # PageDoc 收口：所有块先按页归属，再交导出；后续按页几何/
         # 对象账本/页码验收都从这里取，不再靠全局 marks 偏移。
         _pb = pagedoc.PageBook.from_blocks(

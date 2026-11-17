@@ -1334,6 +1334,12 @@ def reorder_two_column(lines, gutter, gap_pt=3.0, body_size=None):
         if fn_y is not None and l['y0'] >= fn_y:
             notes.append(l)
             continue
+        # 首页题名/作者/摘要等前置块：字号大于正文且位于正文起点之前，
+        # 必须保持原有前后顺序；否则作者会被当成跨缝行拆进右栏。
+        if l['y0'] < body_start and (body_size <= 0 or
+                                     (l.get('size') or 0) > body_size * 1.15):
+            wide.append(l)
+            continue
         if small_thr and (l.get('size') or 0) < small_thr:
             if l['y0'] < body_start:
                 wide.append(l)          # 标题/摘要等前置内容：原样保留
@@ -1397,8 +1403,8 @@ def reorder_two_column(lines, gutter, gap_pt=3.0, body_size=None):
             'size': size,          # 保留字号：脚注/正文判定要用
         }
 
-    out = [l for l in lines
-           if l['y0'] < top_band or l['y0'] > bottom_band]
+    out = [l for l in lines if l['y0'] < top_band]
+    _bottom = [l for l in lines if l['y0'] > bottom_band]
     out.extend(wide)
     left.sort(key=lambda sp: min(s['y0'] for s in sp))
     right.sort(key=lambda sp: min(s['y0'] for s in sp))
@@ -1407,6 +1413,9 @@ def reorder_two_column(lines, gutter, gap_pt=3.0, body_size=None):
     ry1 = max(s['y1'] for sp in right for s in sp) if right else ly1
     for sp in right:
         out.append(mk(sp, dx, dy))
+    # 页底脚注/页码必须排在右栏之后，不能因为 y>bottom_band 被提前
+    # 塞进左栏正文。
+    out.extend(_bottom)
     # 页脚小字排到两栏文字之后（阅读顺序：左栏→右栏→脚注）
     if notes:
         ny0 = (ry1 + dy) + 40.0

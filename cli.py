@@ -58,7 +58,8 @@ def main():
     out = args.out or os.path.splitext(pdf)[0] + u'_整理版.docx'
     work = os.path.join(os.path.dirname(out) or '.', '_bookocr_工作目录')
     opts = {
-        'two_column': (args.mode != 'paper') and not args.no_two_column,
+        # 论文模式也可能退回文字规则；双栏重排不能因此关掉。
+        'two_column': not args.no_two_column,
         'align_mode': (u'auto' if args.align_auto
                        else u'manual' if args.align_file else u'off'),
         'align_file': args.align_file or '',
