@@ -2254,6 +2254,23 @@ def trim_orphan_object_pages(docx_path, expected_pages):
         for p in sorted(bad, reverse=True):
             try:
                 r = doc.GoTo(1, 1, p)
+                # 该页可能是某张表/图唯一载体：先把行内对象移到上一页，
+                # 再删空壳页，不能把对象一起删掉。
+                try:
+                    nsh = int(r.InlineShapes.Count)
+                except Exception:
+                    nsh = 0
+                if nsh:
+                    for _k in range(nsh, 0, -1):
+                        try:
+                            sh = r.InlineShapes(_k)
+                            sh.Range.Cut()
+                            tgt = doc.GoTo(1, 1, max(1, p - 1))
+                            tgt.Collapse(0)  # wdCollapseEnd
+                            tgt.Paste()
+                        except Exception:
+                            pass
+                    r = doc.GoTo(1, 1, p)
                 doc.Range(r.Start, r.End).Delete()
             except Exception:
                 pass
