@@ -1075,7 +1075,36 @@ class Job:
                             _pg.rect.height - _gg['bottom'])
                         _pg.get_pixmap(dpi=150, clip=_clip).save(_sp)
                     else:
-                        _pg.get_pixmap(dpi=130).save(_sp)
+                        # 整页截图也先裁到“版心内实际内容 bbox”，
+                        # 去掉上下左右白边；不能把整页空白当对象。
+                        _gg = layout.page_geometry(
+                            geo_pages, _pg.rect.width, _pg.rect.height)
+                        _cb = None
+                        try:
+                            _rs = []
+                            for _tb in _pg.get_text('blocks'):
+                                if _tb[4] and _tb[4].strip():
+                                    _rs.append(pymupdf.Rect(_tb[:4]))
+                            for _dr in _pg.get_drawings():
+                                _rs.append(_dr['rect'])
+                            if _rs:
+                                _u = _rs[0]
+                                for _r in _rs[1:]:
+                                    _u = _u | _r
+                                _cb = _u
+                        except Exception:
+                            _cb = None
+                        _clip0 = pymupdf.Rect(
+                            _gg['left'], _gg['top'],
+                            _pg.rect.width - _gg['right'],
+                            _pg.rect.height - _gg['bottom'])
+                        if _cb is not None:
+                            _clip0 = _clip0 & (_cb + (-5, -5, 5, 5))
+                        if _clip0.is_empty or _clip0.width < 20 or _clip0.height < 20:
+                            _clip0 = pymupdf.Rect(_gg['left'], _gg['top'],
+                                                  _pg.rect.width - _gg['right'],
+                                                  _pg.rect.height - _gg['bottom'])
+                        _pg.get_pixmap(dpi=130, clip=_clip0).save(_sp)
                 except Exception:
                     snap_pages.discard(_pno)
             _sdoc.close()
