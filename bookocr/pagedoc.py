@@ -43,6 +43,15 @@ class PageDoc:
     def objects(self) -> List[Any]:
         return [b for b in self.blocks if b and b[0] in OBJECT_KINDS]
 
+    def object_frames(self):
+        from .object_ledger import from_block
+        out = []
+        for b in self.objects:
+            f = from_block(self.page_no, b)
+            if f is not None:
+                out.append(f)
+        return out
+
     @property
     def text(self) -> str:
         return ''.join((b[1] or '') for b in self.blocks
@@ -131,6 +140,21 @@ class PageBook:
                     errs.append('第 %s 页有坏块' % p.page_no)
                     break
         return errs
+
+    def object_frames(self):
+        out = []
+        seen = set()
+        for p in self.pages:
+            for f in p.object_frames():
+                if f.key() in seen:
+                    continue
+                seen.add(f.key())
+                out.append(f)
+        return out
+
+    def object_summary(self):
+        from .object_ledger import summary
+        return summary(self.object_frames())
 
     def object_count(self) -> Dict[str, int]:
         out: Dict[str, int] = {}

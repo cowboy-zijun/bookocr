@@ -1676,6 +1676,10 @@ class Job:
         else:
             say(u'PageDoc：%d 页，对象 %s'
                 % (_pb.count(), _pb.object_count()))
+            _os = _pb.object_summary()
+            say(u'对象账本：%s，合计 %d，页级截图 %d'
+                % (_os.get('by_kind'), _os.get('total'),
+                   _os.get('page_screenshots', 0)))
         _rv = self.opts.get('review')
         if _rv:
             try:

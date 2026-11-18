@@ -836,7 +836,7 @@ def _merge_page_heading(frames):
     return frames
 
 
-def paper_line_blocks(trees, pages=None, columns=2):
+def paper_line_blocks(trees, pages=None, columns=2, objects=None):
     """论文 1:1 版面：先保留大框（栏/带），再在大框里保留每个视觉行。
 
     返回 page / vspace / linepage 块。linepage 的 payload 是左右两栏的
@@ -887,6 +887,12 @@ def paper_line_blocks(trees, pages=None, columns=2):
         left_leaves, right_leaves = _split_leaves(keep)
         two = (bool(left_leaves) and bool(right_leaves)) if pages is not None \
             else columns > 1
+        _objs = []
+        for _o in (objects or {}).get(p) or []:
+            _bb = _o.get('bbox') or (0, 0, 0, 0)
+            _objs.append({'kind': _o.get('kind') or 'figure',
+                          'bbox': list(_bb), 'path': _o.get('path') or '',
+                          'tableimg': bool(_o.get('tableimg'))})
         if not two:
             # 单栏页：整页文字是一个大框，里面按视觉行排；不能再套
             # 双栏三列表格，否则正文会被压进左半页。
@@ -894,7 +900,8 @@ def paper_line_blocks(trees, pages=None, columns=2):
             rec = {'left': frame, 'right': None, 'single': True}
             frames.append(rec)
             out.append(('linepage',
-                        json.dumps({'page': p, 'cols': 1, 'left': frame},
+                        json.dumps({'page': p, 'cols': 1, 'left': frame,
+                                    'objects': _objs},
                                    ensure_ascii=False), [], None, 0))
             continue
         front, body = [], []
@@ -920,8 +927,15 @@ def paper_line_blocks(trees, pages=None, columns=2):
                     if gap > 4:
                         out.append(('vspace', str(round(gap, 1)), [], None, 0))
             out.extend(_blocks_from_lines(_linearize(front), p))
+        # 图/表仍按截图，但挂在对应栏内，不能再整页截图。
+        _mid = ((frame['left'] or {}).get('x1', 1600) +
+                (frame['right'] or {}).get('x0', 1740)) / 2.0
+        for _o in _objs:
+            _b = _o.get('bbox') or (0, 0, 0, 0)
+            _o['col'] = 'left' if (_b[0] + _b[2]) / 2.0 < _mid else 'right'
         payload = {'page': p,
-                   'left': frame['left'], 'right': frame['right']}
+                   'left': frame['left'], 'right': frame['right'],
+                   'objects': _objs}
         out.append(('linepage', json.dumps(payload, ensure_ascii=False),
                     [], None, 0))
     _merge_page_heading(frames)
@@ -1085,16 +1099,99 @@ def _leaf_hits_obj(leaf, objs):
 def _object_node(obj):
     bb = [float(x) for x in (obj.get('bbox') or (0, 0, 0, 0))]
     kind = obj.get('kind') or 'figure'
+    # 优先可编辑表；只有没有 grid 时才退裁图。
+    # 论文模式以前只要有 path 就当 figure，导致 tables=0。
+    _grid = obj.get('grid') or {}
+    if kind == 'table' and (_grid.get('rows')):
+        return {'type': 'object', 'kind': 'table', 'bbox': bb,
+                'grid': _grid,
+                'size': obj.get('size') or 0}
+    if kind == 'table' and obj.get('path'):
+        return {'type': 'object', 'kind': 'figure', 'bbox': bb,
+                'path': obj.get('path') or ''}
     if kind == 'table':
         return {'type': 'object', 'kind': 'table', 'bbox': bb,
-                'grid': obj.get('grid') or {},
+                'grid': _grid,
                 'size': obj.get('size') or 0}
     return {'type': 'object', 'kind': 'figure', 'bbox': bb,
             'path': obj.get('path') or ''}
 
 
+def _column_object_flow(root, all_leaves, objs, page_w=3400.0):
+    """半栏图/表：按左右栏各自做垂直流，避免整页对象都排到页尾。"""
+    body_lines = [l for x in all_leaves for l in (x.get('lines') or [])
+                  if 400 < l['y0'] < 4600]
+    g = _find_gutter(body_lines, page_w)
+    gut = (g[0], g[1]) if g else (1600.0, 1700.0)
+    mid = (gut[0] + gut[1]) / 2.0
+    top, left, right = [], [], []
+    for x in all_leaves:
+        b = x.get('bbox') or (0, 0, 0, 0)
+        if b[0] < gut[0] and b[2] > gut[1]:
+            top.append(x)
+        elif (b[0] + b[2]) / 2.0 < mid:
+            left.append(x)
+        else:
+            right.append(x)
+    lobjs = [o for o in objs
+             if ((o.get('bbox') or (0, 0, 0, 0))[0] +
+                 (o.get('bbox') or (0, 0, 0, 0))[2]) / 2.0 < mid]
+    robjs = [o for o in objs if o not in lobjs]
+    seen = set()
+
+    def _col(leaves_, objs_):
+        items = []
+        for x in leaves_:
+            items.append(((x.get('bbox') or (0, 0, 0, 0))[1], 0, x))
+        for o in objs_:
+            items.append(((o.get('bbox') or (0, 0, 0, 0))[1], 1, o))
+        items.sort(key=lambda z: (z[0], z[1]))
+        ch, buf = [], []
+        def _flush():
+            if not buf:
+                return
+            ps = _leaf_payloads(buf, seen)
+            if ps:
+                ch.append({'type': 'band',
+                           'bbox': list(_bbox_leaves(buf)),
+                           'children': ps})
+        for _y, kind, item in items:
+            if kind:
+                _flush(); buf = []
+                ch.append(_object_node(item))
+            else:
+                buf.append(item)
+        _flush()
+        bb = _bbox_leaves(leaves_ + [])
+        return {'type': 'band', 'bbox': list(bb), 'children': ch} if ch else None
+
+    ch = []
+    if top:
+        tp = _leaf_payloads(top, seen)
+        if tp:
+            ch.append({'type': 'band', 'bbox': list(_bbox_leaves(top)),
+                       'children': tp})
+    lc = _col(left, lobjs)
+    rc = _col(right, robjs)
+    if lc and rc:
+        ch.append({'type': 'columns',
+                   'bbox': list(_bbox_leaves(left + right)),
+                   'children': [lc, rc]})
+    elif lc or rc:
+        ch.append(lc or rc)
+    return {'type': 'band',
+            'bbox': list(root.get('bbox') or (0, 0, 0, 5000)),
+            'children': ch}
+
+
 def _paper_object_flow(root, all_leaves, objs, page_w=3400.0):
     """页面被通栏表格/插图切成若干段：段内照常分栏，对象按原位插入。"""
+    # 半栏对象（最常见：左栏表、右栏图）不能按整页垂直流排，否则
+    # 图会被推到下一页；按栏内 y 顺序嵌入。
+    widths = [(o.get('bbox') or (0, 0, 0, 0))[2] -
+              (o.get('bbox') or (0, 0, 0, 0))[0] for o in objs]
+    if objs and max(widths or [0]) < page_w * 0.68:
+        return _column_object_flow(root, all_leaves, objs, page_w)
     leaves_ = [x for x in all_leaves if not _leaf_hits_obj(x, objs)]
     items = []
     for x in leaves_:
