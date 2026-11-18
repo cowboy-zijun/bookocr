@@ -1903,6 +1903,12 @@ class Job:
                 say(u'分页验收：每页已与原书对齐')
         elif over is not None:
             say(u'分页验收：页数与原书一致')
+        _final = export.measure_pagination(self.out_path)
+        if _final is not None and _final.page_count != _exp:
+            say(u'[FAIL] 物理页 %d != 原书 %d，禁止把这份文件当成品交付'
+                % (_final.page_count, _exp))
+            raise RuntimeError(u'物理页数不一致：%d/%d'
+                               % (_final.page_count, _exp))
         say(u'完成：%s（%s）' % (self.out_path, dict(counts)))
         # 自动做页间接缝检验（句子拆断/句首标点/汉字间空格），结果写入日志
         from . import checker
