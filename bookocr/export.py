@@ -300,8 +300,10 @@ def make_style(size, tiers=None, small=None, toc_sz=None):
                        ls=lspt(1.1, 8.5)),
         'table': dict(ea=u'宋体', size=9.5, align='l', before=0, after=0,
                       ls=lspt(1.15, 9.5)),
-        'note': dict(ea=u'楷体', size=note_sz, align='j', before=0, after=0,
-                     left=12, ls=lspt(1.45, note_sz)),
+        # 注文不能用 justify：短行会被 Word 拉开字距。
+        # 用左对齐 + 更紧的源注文行距，字距不再随行宽变化。
+        'note': dict(ea=u'楷体', size=note_sz, align='l', before=0, after=0,
+                     left=12, ls=lspt(1.22, note_sz)),
         # 原书右对齐的引文出处/署名（“《我的奋斗》第385页”）。单独成段、
         # 右对齐，不能并进下一段正文。
         'cite': dict(ea=u'宋体', size=size, align='r', before=0, after=0,

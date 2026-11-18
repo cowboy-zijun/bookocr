@@ -27,11 +27,19 @@ class Region:
     lines: List[dict] = field(default_factory=list)
     size: float = 0.0
     pitch: float = 0.0
+    char_gap: float = 0.0
+    top_slack: float = 0.0
+    bottom_slack: float = 0.0
+    fill_ratio: float = 0.0
 
     def to_dict(self):
         return {'role': self.role, 'bbox': [round(x, 2) for x in self.bbox],
                 'size': round(self.size, 2),
                 'pitch': round(self.pitch, 2),
+                'char_gap': round(self.char_gap, 2),
+                'top_slack': round(self.top_slack, 2),
+                'bottom_slack': round(self.bottom_slack, 2),
+                'fill_ratio': round(self.fill_ratio, 3),
                 'n': len(self.lines)}
 
 
@@ -70,11 +78,41 @@ def _median_size(lines, default=9.0):
     return statistics.median(vals) if vals else default
 
 
+def _char_gap(lines):
+    """Median horizontal gap between adjacent spans in a frame."""
+    gaps = []
+    for l in lines:
+        spans = [s for s in (l.get('spans') or [])
+                 if (s.get('text') or '').strip()]
+        for a, b in zip(spans, spans[1:]):
+            try:
+                gaps.append(float(b['x0']) - float(a['x1']))
+            except Exception:
+                pass
+    if not gaps:
+        return 0.0
+    return statistics.median(gaps)
+
+
 def _median_pitch(lines, default=None):
     ys = sorted({round(l['y0'], 1) for l in lines})
     dif = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)
            if 20 < ys[i + 1] - ys[i] < 300]
     return statistics.median(dif) if dif else default
+
+
+def _region(name, group, b, sx, sy):
+    size = _median_size(group)
+    pitch = (_median_pitch(group, 0) or 0) * sy
+    bb = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy]
+    top = min(l['y0'] for l in group)
+    bottom = max(l['y1'] for l in group)
+    h = max(1.0, bb[3] - bb[1])
+    return Region(name, bb, group, size, pitch,
+                  char_gap=_char_gap(group) * sx,
+                  top_slack=max(0.0, (top - b[1]) * sy),
+                  bottom_slack=max(0.0, (b[3] - bottom) * sy),
+                  fill_ratio=min(1.5, ((bottom - top) * sy) / h))
 
 
 def measure_page(pdf_path, pno, all_pages=None):
@@ -126,9 +164,7 @@ def measure_page(pdf_path, pno, all_pages=None):
                 if not group:
                     continue
                 b = _bbox(group)
-                prof.regions[name] = Region(
-                    name, [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy],
-                    group, _median_size(group), _median_pitch(group, 0) or 0)
+                prof.regions[name] = _region(name, group, b, sx, sy)
             top = min(prof.regions['left'].bbox[1],
                       prof.regions['right'].bbox[1])
             prof.regions['left'].bbox[1] = top
@@ -139,19 +175,13 @@ def measure_page(pdf_path, pno, all_pages=None):
         else:
             _body = body or body_all
             b = _bbox(_body)
-            prof.regions['body'] = Region(
-                'body', [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy],
-                _body, _median_size(_body), _median_pitch(_body, 0) or 0)
+            prof.regions['body'] = _region('body', _body, b, sx, sy)
         if front:
             b = _bbox(front)
-            prof.regions['front'] = Region(
-                'front', [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy],
-                front, _median_size(front), _median_pitch(front, 0) or 0)
+            prof.regions['front'] = _region('front', front, b, sx, sy)
         if notes:
             b = _bbox(notes)
-            prof.regions['notes'] = Region(
-                'notes', [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy],
-                notes, _median_size(notes), _median_pitch(notes, 0) or 0)
+            prof.regions['notes'] = _region('notes', notes, b, sx, sy)
         _body_names = [n for n in ('left', 'right', 'body') if n in prof.regions]
         if 'front' in prof.regions and _body_names:
             bt = min(prof.regions[n].bbox[1] for n in _body_names)
