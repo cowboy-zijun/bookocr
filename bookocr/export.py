@@ -254,7 +254,7 @@ def _mark_broken(text, mask):
     return text, m
 
 
-def make_style(size, tiers=None, small=None, toc_sz=None):
+def make_style(size, tiers=None, small=None, toc_sz=None, body_pitch=None):
     f = size / 11.0
 
     def sc(x):
