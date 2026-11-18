@@ -859,7 +859,7 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 page_scale=None, page_numbers=None, regions=None, geom=None,
                 lead_scale=None, columns=1, style_maps=None,
                 landscape_pages=None, locked_pages=None, page_sections=None,
-                page_geometries=None):
+                page_geometries=None, page_pitches=None):
     """blocks: [kind, text, mask, verified, hlevel]（含 page 标记）。
 
     appendix_from: 附录/注释/索引区起始页（自动识别），此后的正文块
@@ -2131,7 +2131,14 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
         p.alignment = ALIGN[cf['align']]
         pf.space_before = Pt(cf['before'] * k * lk)
         pf.space_after = Pt(cf['after'] * k * lk)
-        pf.line_spacing = Pt((body_ls * k if role == 'body' else cf['ls']) * lk)
+        _pls = None
+        if role == 'body' and page_pitches:
+            try:
+                _pls = float(page_pitches.get(cur_page) or 0)
+            except Exception:
+                _pls = None
+        _base_ls = _pls if (_pls and _pls >= (bsize or 0) * 1.05) else body_ls
+        pf.line_spacing = Pt((_base_ls * k if role == 'body' else cf['ls']) * lk)
         # 延续段不缩进——原书排版惯例（新段才缩进）
         if cf.get('ind') and not (role == 'body' and (is_cont or CONT.match(text.lstrip(u'　 ')))):
             pf.first_line_indent = Pt(cf['ind'] * k)

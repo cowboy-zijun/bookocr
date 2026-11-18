@@ -1754,11 +1754,31 @@ class Job:
                 _rjp, _rhp = review.write_review(_rvdata, _review_dir)
                 say(u'人工复核：%d 项 -> %s（打开 %s）'
                     % (len(_rvdata.get('items') or []), _rjp, _rhp))
+        # 逐页 body 行距：用源页行距的中位数，不能全局一个 1.5 倍。
+        _page_pitches = {}
+        try:
+            _ph = float((geom or {}).get('page_h') or 841.9)
+            for _p, _ls in pages.items():
+                _ys = sorted({round(float(l['y0']), 1) for l in _ls
+                              if l.get('y0') is not None})
+                _ds = [_ys[i + 1] - _ys[i] for i in range(len(_ys) - 1)
+                       if 12 < _ys[i + 1] - _ys[i] < 80]
+                if len(_ds) >= 3:
+                    _ds.sort()
+                    _pitch = _ds[len(_ds) // 2] / 5000.0 * _ph
+                    if 8.0 <= _pitch <= 30.0:
+                        _page_pitches[_p] = round(_pitch, 2)
+        except Exception:
+            _page_pitches = {}
+        if _page_pitches:
+            say(u'逐页行距：%d 页有 frame pitch，范围 %.1f–%.1f pt'
+                % (len(_page_pitches), min(_page_pitches.values()),
+                   max(_page_pitches.values())))
         counts = export.export_docx(blocks, self.out_path, title=title, notes=notes,
                                     appendix_from=appendix_from,
                                     page_numbers=page_numbers,
                                     regions=regions, geom=geom,
-                                    columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                                    columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
         # 分页验收：用 Word 实际排版核对“一页原书 = 一页 Word”。
         # 估算难免有误差，凡是有页超出的，回缩后重排一次。
         over = export.measure_pagination(self.out_path)
@@ -1795,7 +1815,7 @@ class Job:
                 appendix_from=appendix_from,
                 lead_scale={p: 0.94 for p in over_pdf},
                 page_numbers=page_numbers, regions=regions, geom=geom,
-                columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
             left = export.measure_pagination(self.out_path)
             if left:
                 # 行距压了还不够，才动字号（字号一致比行距略紧重要）
@@ -1807,7 +1827,7 @@ class Job:
                     lead_scale={p: 0.90 for p in over_pdf},
                     page_scale={p: 0.9 for p in set(left)},
                     page_numbers=page_numbers, regions=regions, geom=geom,
-                    columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                    columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
                 left2 = export.measure_pagination(self.out_path)
                 # 少数页面只差一两行时，0.90 还不够。继续按页追加压缩，
                 # 否则这一两行会被挤成下一页，出现“整页只有一句话”的
@@ -1831,7 +1851,7 @@ class Job:
                             lead_scale=_fit_lead, page_scale=_fit_page,
                             page_numbers=page_numbers, regions=regions,
                             geom=geom, columns=columns,
-                            style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                            style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
                         left2 = export.measure_pagination(self.out_path)
                     if not left2:
                         say(u'分页验收：偏长页已继续压缩，每页与原书对齐')
@@ -1884,7 +1904,7 @@ class Job:
                                 appendix_from=appendix_from,
                                 page_numbers=page_numbers, regions=regions,
                                 geom=geom, columns=columns,
-                                style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                                style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
                             _left_line = export.measure_pagination(self.out_path)
                             if not _left_line:
                                 _line_ok = True
@@ -1952,7 +1972,7 @@ class Job:
                                 appendix_from=appendix_from,
                                 page_numbers=page_numbers, regions=regions,
                                 geom=geom, columns=columns,
-                                style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries)
+                                style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
                             left3 = export.measure_pagination(self.out_path)
                             if left3:
                                 say(u'分页验收：仍有 %d 页偏长 '
