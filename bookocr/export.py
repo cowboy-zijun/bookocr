@@ -2253,6 +2253,10 @@ def trim_orphan_object_pages(docx_path, expected_pages):
         app.Visible = False
         app.DisplayAlerts = 0
         doc = app.Documents.Open(docx_path, False, False)
+        try:
+            _n_inline0 = int(doc.InlineShapes.Count)
+        except Exception:
+            _n_inline0 = -1
         for p in sorted(bad, reverse=True):
             try:
                 r = doc.GoTo(1, 1, p)
@@ -2278,7 +2282,12 @@ def trim_orphan_object_pages(docx_path, expected_pages):
                 pass
         doc.Save()
         n = int(doc.ComputeStatistics(2))
-        if n != expected_pages:
+        try:
+            _n_inline1 = int(doc.InlineShapes.Count)
+        except Exception:
+            _n_inline1 = -1
+        # 清孤儿页不能减少图对象；少一张就整体回滚。
+        if n != expected_pages or (_n_inline0 >= 0 and _n_inline1 < _n_inline0):
             _shutil.copy2(bak, docx_path)
             return 0, n
         return len(bad), n
