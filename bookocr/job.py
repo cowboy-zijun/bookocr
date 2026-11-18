@@ -1993,19 +1993,56 @@ class Job:
         elif over is not None:
             say(u'分页验收：页数与原书一致')
         _final = export.measure_pagination(self.out_path)
+        _pre_trim = self.out_path + '.pretrim'
         if _final is not None and _final.page_count != _exp:
+            import shutil as _shutil
+            try:
+                _shutil.copy2(self.out_path, _pre_trim)
+            except Exception:
+                _pre_trim = ''
             say(u'分页验收：物理页 %d / 原书 %d，尝试清掉孤儿对象页'
                 % (_final.page_count, _exp))
-            _rm, _n = export.trim_orphan_object_pages(self.out_path, _exp)
+            try:
+                _rm, _n = export.trim_orphan_object_pages(self.out_path, _exp)
+            except Exception as _e:
+                _rm, _n = 0, None
+                say(u'分页验收：清孤儿页异常（%s）' % _e)
             if _rm:
                 say(u'分页验收：清掉 %d 个孤儿对象页，物理页 %s'
                     % (_rm, _n))
-                _final = export.measure_pagination(self.out_path)
+            _final = export.measure_pagination(self.out_path)
         if _final is not None and _final.page_count != _exp:
+            # Word 首次分页有时比保存后重开多算 1-3 页；再量一次，
+            # 避免把实际 38 页的文件误杀。
+            try:
+                import time as _time
+                _time.sleep(1.5)
+                _final2 = export.measure_pagination(self.out_path)
+                if _final2 is not None and _final2.page_count == _exp:
+                    _final = _final2
+                    say(u'分页验收：二次测量 %d 页，与原书一致'
+                        % _final.page_count)
+            except Exception:
+                pass
+        if _final is not None and _final.page_count != _exp:
+            # 事务回滚：清孤儿页把文件改坏时，恢复到清页前，
+            # 不能让半成品覆盖用户文件。
+            if _pre_trim and os.path.exists(_pre_trim):
+                try:
+                    import shutil as _shutil2
+                    _shutil2.copy2(_pre_trim, self.out_path)
+                    say(u'分页验收：已回滚到清孤儿页之前的文件')
+                except Exception:
+                    pass
             say(u'[FAIL] 物理页 %d != 原书 %d，禁止把这份文件当成品交付'
                 % (_final.page_count, _exp))
             raise RuntimeError(u'物理页数不一致：%d/%d'
                                % (_final.page_count, _exp))
+        try:
+            if _pre_trim and os.path.exists(_pre_trim):
+                os.remove(_pre_trim)
+        except Exception:
+            pass
         say(u'完成：%s（%s）' % (self.out_path, dict(counts)))
         # 自动做页间接缝检验（句子拆断/句首标点/汉字间空格），结果写入日志
         from . import checker

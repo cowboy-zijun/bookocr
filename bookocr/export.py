@@ -2242,9 +2242,17 @@ def trim_orphan_object_pages(docx_path, expected_pages):
         _docx_to_pdf(docx_path, tmp)
         pdf = _fitz.open(tmp)
         bad = []
+        _seen = set()
         for i, pg in enumerate(pdf):
             t = pg.get_text()
-            if u'原书第' in t:
+            _m = re.search(u'原书第\\s*([^\\s]+?)\\s*页', t)
+            _lab = _m.group(1) if _m else None
+            if _lab is not None and _lab in _seen:
+                # 同一页标跨了两个物理页：后一页是重复页
+                bad.append(i + 1)
+                continue
+            if _lab is not None:
+                _seen.add(_lab)
                 continue
             if any(m in t for m in _NOTE_MARKERS):
                 continue
@@ -2264,27 +2272,36 @@ def trim_orphan_object_pages(docx_path, expected_pages):
             _n_inline0 = int(doc.InlineShapes.Count)
         except Exception:
             _n_inline0 = -1
+        def _page_range(pno):
+            _n = int(doc.ComputeStatistics(2))
+            _start = int(doc.GoTo(1, 1, pno).Start)
+            if pno < _n:
+                _end = int(doc.GoTo(1, 1, pno + 1).Start)
+            else:
+                _end = int(doc.Content.End)
+            return doc.Range(_start, _end)
+
         for p in sorted(bad, reverse=True):
             try:
-                r = doc.GoTo(1, 1, p)
                 # 该页可能是某张表/图唯一载体：先把行内对象移到上一页，
                 # 再删空壳页，不能把对象一起删掉。
+                rng = _page_range(p)
                 try:
-                    nsh = int(r.InlineShapes.Count)
+                    nsh = int(rng.InlineShapes.Count)
                 except Exception:
                     nsh = 0
                 if nsh:
                     for _k in range(nsh, 0, -1):
                         try:
-                            sh = r.InlineShapes(_k)
+                            sh = rng.InlineShapes(_k)
                             sh.Range.Cut()
                             tgt = doc.GoTo(1, 1, max(1, p - 1))
                             tgt.Collapse(0)  # wdCollapseEnd
                             tgt.Paste()
                         except Exception:
                             pass
-                    r = doc.GoTo(1, 1, p)
-                doc.Range(r.Start, r.End).Delete()
+                rng = _page_range(p)
+                rng.Delete()
             except Exception:
                 pass
         doc.Save()
