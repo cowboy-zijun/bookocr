@@ -1250,6 +1250,33 @@ class Job:
                 marks = {int(b[1]): i for i, b in enumerate(blocks)
                          if b[0] == 'page'}
 
+        def _block_bbox(b, page_lines):
+            """Recover x/y bbox for a text block from its source lines.
+
+            build_blocks text blocks carry only (kind,text,mask,y0,size);
+            for x/y ordering we need x too. Match the block text back to the
+            page's source lines instead of inventing a position.
+            """
+            import re as _re
+            t = _re.sub(r'\s+', '', b[1] or '')
+            if not t:
+                return None
+            hits = []
+            acc = ''
+            for l in page_lines:
+                lt = _re.sub(r'\s+', '', l.get('text') or '')
+                if not lt:
+                    continue
+                if lt in t or t[:max(1, len(lt))] == lt:
+                    hits.append(l)
+                    acc += lt
+                    if len(acc) >= len(t):
+                        break
+            if not hits:
+                return None
+            return (min(l['x0'] for l in hits), min(l['y0'] for l in hits),
+                    max(l['x1'] for l in hits), max(l['y1'] for l in hits))
+
         # 插图：把原书里的图截下来，安插到 Word 中对应的文字位置
         #（默认开启；不改变每页分页与文字排版）
         if self.opts.get('images', True):
@@ -1298,24 +1325,22 @@ class Job:
                     else:
                         y0, path = _item[0], _item[1]
                         bb = None
-                    # 按原书上下位置安插：插到第一个 y 更靠下的文字块之前；
-                    # 无坐标可依（如双栏页）时退回图注锚点，再退回页尾
+                    # 按原书 x/y 位置安插：同一行看 x，下一行看 y。
+                    # 文本块 5 元组没有 x，只能回查源行 bbox。
+                    img_x0 = bb[0] if bb else 0.0
+                    img_y0 = y0
                     pos = len(seg)
                     for k2, b2 in enumerate(seg):
-                        # 文本块 8 元组：[kind,text,mask,verified,hlevel,y0,size,bbox]；
-                        # y0 在 index 5。图片块是 [image,path,[],y0,0,bbox]，
-                        # y0 在 index 3。旧代码统一读 b2[3]，文本块的 b2[3]
-                        # 是 verified/mask，不是坐标，所以永远找不到位置，
-                        # 图就全部落到页尾。
-                        if b2 and b2[0] in ('image', 'tablepage'):
-                            by = b2[3] if len(b2) > 3 and                                 isinstance(b2[3], (int, float)) else None
-                        elif len(b2) > 5 and isinstance(b2[5], (int, float)):
-                            by = b2[5]
-                        elif len(b2) > 3 and isinstance(b2[3], (int, float)):
-                            by = b2[3]
+                        tb = _block_bbox(b2, pages.get(pno) or [])
+                        if tb is None:
+                            by = b2[5] if len(b2) > 5 and isinstance(b2[5], (int, float)) else None
+                            bx = 0.0
                         else:
-                            by = None
-                        if by is not None and by > y0:
+                            bx, by = tb[0], tb[1]
+                        if by is None:
+                            continue
+                        tol = 20.0
+                        if by > img_y0 + tol or (abs(by - img_y0) <= tol and bx > img_x0):
                             pos = k2
                             break
                     if pos == len(seg):
