@@ -41,6 +41,8 @@ def main():
                     help=u'生成人工复核目录（review.json + review.html + 裁剪图）')
     ap.add_argument('--review', metavar='JSON',
                     help=u'应用人工复核 review.json 后导出')
+    ap.add_argument('--layout-report', metavar='JSON',
+                    help=u'只量页面/区域外框，输出 JSON（不导出 Word）')
     ap.add_argument('--frame-mode', action='store_true',
                     help=u'L4 绝对框模式：量外框/左右栏/注文框，绝对定位导出（文字层）')
     ap.add_argument('--format', choices=['docx', 'html', 'json', 'all'],
@@ -58,6 +60,13 @@ def main():
 
     pdf = args.pdf
     out = args.out or os.path.splitext(pdf)[0] + u'_整理版.docx'
+    if args.layout_report:
+        from bookocr import layout_profile
+        _profiles = layout_profile.measure_book(pdf)
+        layout_profile.write_report(_profiles, args.layout_report)
+        print(u'版面测量：%s' % args.layout_report)
+        return
+
     if args.frame_mode:
         from bookocr import frame_export
         jp = os.path.splitext(out)[0] + '.frames.json'

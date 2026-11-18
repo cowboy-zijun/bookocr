@@ -1492,7 +1492,29 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 cs = OxmlElement('w:cantSplit')
                 trPr.append(cs)
                 pad = float(data.get('pad') or 0.0)
-                for ci, frame in ((0, lf), (2, rf)):
+                _line_objs = data.get('objects') or []
+                _objs_by = {'left': [], 'right': []}
+                for _o in _line_objs:
+                    _objs_by.setdefault(_o.get('col') or 'left',
+                                        []).append(_o)
+                for _k in _objs_by:
+                    _objs_by[_k].sort(key=lambda z: (z.get('bbox') or
+                                                     (0, 0, 0, 0))[1])
+
+                def _add_obj(cell, o, cw):
+                    _p = o.get('path') or ''
+                    if not _p or not os.path.exists(_p):
+                        return
+                    _b = o.get('bbox') or (0, 0, 0, 0)
+                    _w = max(12.0, min(cw, (_b[2] - _b[0]) * scale))
+                    try:
+                        cell.add_picture(_p, width=Pt(_w))
+                        cell.paragraphs[-1].alignment = \
+                            WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+
+                for ci, frame, _ck in ((0, lf, 'left'), (2, rf, 'right')):
                     cell = tbl.cell(0, ci)
                     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
                     lines = (frame or {}).get('lines') or []
@@ -1502,7 +1524,15 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                         firstp.paragraph_format.space_after = Pt(0)
                         continue
                     prev_y = None
+                    _cell_objs = _objs_by.get(_ck) or []
+                    _oi = 0
                     for j, ln in enumerate(lines):
+                        while _oi < len(_cell_objs) and \
+                                ((_cell_objs[_oi].get('bbox') or
+                                  (0, 0, 0, 0))[1] <= ln.get('y0', 0)):
+                            _add_obj(cell, _cell_objs[_oi],
+                                     lw if ci == 0 else rw)
+                            _oi += 1
                         cp = firstp if j == 0 else cell.add_paragraph()
                         pf = cp.paragraph_format
                         pf.space_before = Pt(0)
@@ -1536,6 +1566,10 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                         avail = max(4.0, (lw if ci == 0 else rw) - indent)
                         _fit_line_width(run, ln.get('text') or '', fs, avail)
                         prev_y = ln.get('y0', prev_y or 0)
+                    while _oi < len(_cell_objs):
+                        _add_obj(cell, _cell_objs[_oi],
+                                 lw if ci == 0 else rw)
+                        _oi += 1
             except Exception:
                 pass
             plain.append(u'[第%s页正文]' % (data.get('page') if 'data' in locals()

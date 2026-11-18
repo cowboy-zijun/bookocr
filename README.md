@@ -112,6 +112,23 @@ PageDoc/TableIR 转成结构化 IR 或独立 HTML：
 JSON 带页号、页几何、块 bbox、表格 merges、来源和置信度；HTML 用于阅读/检索。
 Word 仍会导出。
 
+## 版面测量（页/区域）
+
+先只量页面和区域，不导出 Word：
+
+```powershell
+.venv\Scripts\python.exe cli.py --pdf 书.pdf --layout-report layout.json
+```
+
+输出每页：
+
+- 整页内容外框；
+- body/front/left/right/notes 区域 bbox；
+- 正文字号、行距、中缝、正文→注文间距；
+- 区域置信度。
+
+单栏页只输出 `body`，不会硬拆 left/right；双栏页才输出 `columns_top`。
+
 ## 框模式（L4，文字层）
 
 整页先量外框，再量 front/左右栏/注文小框，按页面绝对坐标放 `framePr`；

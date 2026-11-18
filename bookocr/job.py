@@ -923,7 +923,21 @@ class Job:
         # 快；期刊/报纸这类整本双栏的 PDF 全靠这一步保证阅读顺序）
         say(u'[1.95/4] 文字层双栏页按栏重排…')
         two_col_text = set()
+        _page_notes = {}
         if self.opts.get('two_column', True):
+            for _pno, _ls in pages.items():
+                # 双栏页脚注先单独摘出来：footnote_start 之后的正文行
+                # 不能参与左右栏，否则 ③ 会被夹在左栏正文中间。
+                try:
+                    _fn = layout.footnote_start(_ls, _doc_size, marker_rule=False)
+                except Exception:
+                    _fn = None
+                if _fn is not None:
+                    _nls = [l for l in _ls if l['y0'] >= _fn]
+                    if _nls:
+                        _page_notes[_pno] = _nls
+                        _ls = [l for l in _ls if l['y0'] < _fn]
+                        pages[_pno] = _ls
             for _pno, _ls in pages.items():
                 if not _ls or not _ls[0].get('spans'):
                     continue
@@ -1570,11 +1584,34 @@ class Job:
                     % len(_page_geoms))
         except Exception as _e:
             say(u'按页几何：分组失败，沿用全局版式（%s）' % _e)
+        # 被摘出的脚注在对应页末重新插回，作为 note 块，不再混入
+        # 双栏正文；位置在下一页 page 标记之前。
+        if _page_notes:
+            _nblocks = []
+            _cur_notes = None
+            for _b in blocks:
+                if _b and _b[0] == 'page':
+                    if _cur_notes:
+                        _nblocks.extend(_cur_notes)
+                        _cur_notes = None
+                    _nblocks.append(_b)
+                    try:
+                        _cur_notes = [('note', (l.get('text') or ''),
+                                       [False] * len(l.get('text') or ''),
+                                       None, 0, None, 0, None)
+                                      for l in _page_notes.get(int(_b[1]), [])]
+                    except Exception:
+                        _cur_notes = None
+                else:
+                    _nblocks.append(_b)
+            if _cur_notes:
+                _nblocks.extend(_cur_notes)
+            blocks = _nblocks
+
         # 文字层双栏 + 首页通栏标题/摘要：在关键词后插入 cols2，
         # 让标题/摘要保持单栏，正文从下一行开始双栏；否则标题会被
         # Word 塞进左栏。
-        if columns == 2 and two_col_text and not any(
-                b and b[0] in ('cols2', 'cols2page') for b in blocks):
+        if columns == 2 and two_col_text:
             _idx = None
             for _i, _b in enumerate(blocks):
                 _t = (_b[1] or '') if _b and len(_b) > 1 else ''
@@ -1656,12 +1693,15 @@ class Job:
         # 分页验收：用 Word 实际排版核对“一页原书 = 一页 Word”。
         # 估算难免有误差，凡是有页超出的，回缩后重排一次。
         over = export.measure_pagination(self.out_path)
+        _exp = sum(1 for b in blocks if b[0] == 'page')
         if over is not None:
             # 分页账本：页标数必须等于原书页数，Word 总页数也要相等；
             # 旧 bug 会重复插页标（6 页变 8 页），只查“每个页标占几页”
             # 查不出来，这里先把数量/序号挡住。
-            _exp = sum(1 for b in blocks if b[0] == 'page')
-            if over.marker_count != _exp:
+            if over.page_count != _exp:
+                say(u'分页验收：Word 物理页 %d / 原书 %d，页数不一致'
+                    % (over.page_count, _exp))
+            if over is not None and over.marker_count != _exp:
                 say(u'分页验收：页标 %d 个 / 原书 %d 页，Word 实际 %d 页'
                     u'——页标数不一致，请检查重复/丢失页'
                     % (over.marker_count, _exp, over.page_count))
