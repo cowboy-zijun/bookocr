@@ -2073,13 +2073,24 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                             max(6.5, _cell_sz * 1.05))
                         cp.paragraph_format.first_line_indent = Pt(0)
                         cp.paragraph_format.left_indent = Pt(0)
-                        # 单元格里的 \n 是原书断行：一个 run 写进去，
-                        # python-docx 会转成软换行，不额外占段间距
-                        run = cp.add_run(str(val))
-                        run.font.size = Pt(_cell_sz)
-                        run.font.name = 'Times New Roman'
-                        run._element.rPr.rFonts.set(
-                            qn('w:eastAsia'), u'宋体')
+                        # 单元格里的 \n 是原书断行；按 CellIR runs 写，
+                        # 保留 R²/上标显著星号等特殊字符。
+                        from .table_ir import CellIR as _CellIR
+                        _cir = _CellIR.from_text(val)
+                        for _cr in _cir.runs:
+                            run = cp.add_run(_cr.text)
+                            run.font.size = Pt(_cell_sz * (0.8 if (_cr.sup or _cr.sub) else 1.0))
+                            run.font.name = 'Times New Roman'
+                            run._element.rPr.rFonts.set(
+                                qn('w:eastAsia'), u'宋体')
+                            if _cr.sup:
+                                run.font.superscript = True
+                            if _cr.sub:
+                                run.font.subscript = True
+                            if _cr.bold:
+                                run.bold = True
+                            if _cr.italic:
+                                run.italic = True
                 # 把表格移到占位段落之前（python-docx 只能加在文档末尾）
                 p._element.addprevious(tbl._element)
             except Exception:

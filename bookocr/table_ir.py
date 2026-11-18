@@ -18,6 +18,59 @@ def _cell(v: Any) -> str:
 
 
 @dataclass
+class CellRun:
+    text: str
+    sup: bool = False
+    sub: bool = False
+    bold: bool = False
+    italic: bool = False
+    confidence: float = 1.0
+
+
+@dataclass
+class CellIR:
+    runs: List[CellRun] = field(default_factory=list)
+    objects: List[Any] = field(default_factory=list)
+
+    @classmethod
+    def from_text(cls, text):
+        """Split a cell string into runs, keeping common symbols/styles.
+
+        This is deliberately conservative: only patterns we can justify
+        (R2 -> R + superscript 2, trailing *** -> superscript stars) are
+        split.  Everything else stays one run, so unicode alpha/beta/units
+        are never dropped.
+        """
+        s = '' if text is None else str(text)
+        if not s:
+            return cls([])
+        runs = []
+        # trailing significance stars are superscript in journal tables
+        import re as _re
+        m = _re.search(r'(\*{1,3})$', s)
+        tail = ''
+        if m:
+            tail = m.group(1)
+            s = s[:m.start()]
+        # R2 / R^2 / adj. R2 at the end
+        m2 = _re.search(r'(R)\^?([2-9])$', s)
+        if m2:
+            prefix = s[:m2.start()]
+            if prefix:
+                runs.append(CellRun(prefix))
+            runs.append(CellRun(m2.group(1)))
+            runs.append(CellRun(m2.group(2), sup=True))
+        else:
+            runs.append(CellRun(s))
+        if tail:
+            runs.append(CellRun(tail, sup=True))
+        return cls([r for r in runs if r.text != ''])
+
+    def text(self):
+        return ''.join(r.text for r in self.runs)
+
+
+@dataclass
 class TableIR:
     rows: List[List[str]] = field(default_factory=list)
     merges: List[List[int]] = field(default_factory=list)
@@ -105,6 +158,12 @@ class TableIR:
         if ncol == 1:
             q -= 0.25
         return max(0.0, min(1.0, q))
+
+    def cell_ir(self, ri, ci):
+        try:
+            return CellIR.from_text(self.rows[ri][ci])
+        except Exception:
+            return CellIR([])
 
     def to_data(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
