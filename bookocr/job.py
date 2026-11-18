@@ -1302,8 +1302,19 @@ class Job:
                     # 无坐标可依（如双栏页）时退回图注锚点，再退回页尾
                     pos = len(seg)
                     for k2, b2 in enumerate(seg):
-                        by = b2[3] if len(b2) > 3 and \
-                            isinstance(b2[3], (int, float)) else None
+                        # 文本块 8 元组：[kind,text,mask,verified,hlevel,y0,size,bbox]；
+                        # y0 在 index 5。图片块是 [image,path,[],y0,0,bbox]，
+                        # y0 在 index 3。旧代码统一读 b2[3]，文本块的 b2[3]
+                        # 是 verified/mask，不是坐标，所以永远找不到位置，
+                        # 图就全部落到页尾。
+                        if b2 and b2[0] in ('image', 'tablepage'):
+                            by = b2[3] if len(b2) > 3 and                                 isinstance(b2[3], (int, float)) else None
+                        elif len(b2) > 5 and isinstance(b2[5], (int, float)):
+                            by = b2[5]
+                        elif len(b2) > 3 and isinstance(b2[3], (int, float)):
+                            by = b2[3]
+                        else:
+                            by = None
                         if by is not None and by > y0:
                             pos = k2
                             break
