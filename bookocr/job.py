@@ -1941,6 +1941,14 @@ class Job:
             say(u'分页验收：页数与原书一致')
         _final = export.measure_pagination(self.out_path)
         if _final is not None and _final.page_count != _exp:
+            say(u'分页验收：物理页 %d / 原书 %d，尝试清掉孤儿对象页'
+                % (_final.page_count, _exp))
+            _rm, _n = export.trim_orphan_object_pages(self.out_path, _exp)
+            if _rm:
+                say(u'分页验收：清掉 %d 个孤儿对象页，物理页 %s'
+                    % (_rm, _n))
+                _final = export.measure_pagination(self.out_path)
+        if _final is not None and _final.page_count != _exp:
             say(u'[FAIL] 物理页 %d != 原书 %d，禁止把这份文件当成品交付'
                 % (_final.page_count, _exp))
             raise RuntimeError(u'物理页数不一致：%d/%d'

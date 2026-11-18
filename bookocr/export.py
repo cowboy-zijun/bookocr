@@ -2024,9 +2024,19 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 widths = [max(widths[ci],
                               min(_desired[ci], tw * 0.38))
                           for ci in range(ncols)]
+                # 列宽必须归一化到目标表宽：不足要放大，超出要缩小。
+                # 旧逻辑只缩小不放大，实测表 2 总和 8361 twips、
+                # 表 0/3 约 9509，导致表 2 明显偏窄、表头换行。
                 _ss = sum(widths) or 1.0
-                if _ss > tw:
-                    widths = [w * tw / _ss for w in widths]
+                widths = [w * tw / _ss for w in widths]
+                # 固定表宽，禁止 Word auto 再分配列宽。
+                _tp = tbl._tbl.tblPr
+                for _e in _tp.findall(qn('w:tblW')):
+                    _tp.remove(_e)
+                _tw = OxmlElement('w:tblW')
+                _tw.set(qn('w:type'), 'dxa')
+                _tw.set(qn('w:w'), str(int(round(tw * 20))))
+                _tp.append(_tw)
                 for ci in range(ncols):
                     tbl.columns[ci].width = Pt(widths[ci])
                 for _row in tbl.rows:
@@ -2182,6 +2192,95 @@ class PaginationResult(set):
         self.page_count = int(page_count)
         self.marker_count = int(marker_count)
         self.labels = labels or []
+
+
+_NOTE_MARKERS = (u'作者简介', u'通信作者', u'收稿日期', u'基金项目')
+
+
+def trim_orphan_object_pages(docx_path, expected_pages):
+    """Trim pages with no page marker that are object fragments, not prose.
+
+    A tablepage/figure fragment can be pushed onto its own page.  Such a page
+    has no 原书第N页 marker and carries mostly short object/caption text.
+    Notes pages are explicitly excluded.
+    """
+    import shutil as _shutil
+    import tempfile as _tempfile
+    try:
+        import pymupdf as _fitz
+        import win32com.client as _win32
+        import pythoncom as _pythoncom
+    except Exception:
+        return 0, None
+    bak = docx_path + '.before_trim'
+    _shutil.copy2(docx_path, bak)
+    fd, tmp = _tempfile.mkstemp(suffix='.pdf')
+    os.close(fd)
+    app = None
+    doc = None
+    try:
+        _docx_to_pdf(docx_path, tmp)
+        pdf = _fitz.open(tmp)
+        bad = []
+        for i, pg in enumerate(pdf):
+            t = pg.get_text()
+            if u'原书第' in t:
+                continue
+            if any(m in t for m in _NOTE_MARKERS):
+                continue
+            if len(t.strip()) > 500:
+                continue
+            bad.append(i + 1)
+        pdf.close()
+        if not bad:
+            _shutil.copy2(bak, docx_path)
+            return 0, None
+        _pythoncom.CoInitialize()
+        app = _win32.DispatchEx('Word.Application')
+        app.Visible = False
+        app.DisplayAlerts = 0
+        doc = app.Documents.Open(docx_path, False, False)
+        for p in sorted(bad, reverse=True):
+            try:
+                r = doc.GoTo(1, 1, p)
+                doc.Range(r.Start, r.End).Delete()
+            except Exception:
+                pass
+        doc.Save()
+        n = int(doc.ComputeStatistics(2))
+        if n != expected_pages:
+            _shutil.copy2(bak, docx_path)
+            return 0, n
+        return len(bad), n
+    except Exception:
+        try:
+            _shutil.copy2(bak, docx_path)
+        except Exception:
+            pass
+        return 0, None
+    finally:
+        try:
+            if doc is not None:
+                doc.Close(False)
+        except Exception:
+            pass
+        try:
+            if app is not None:
+                app.Quit()
+        except Exception:
+            pass
+        try:
+            _pythoncom.CoUninitialize()
+        except Exception:
+            pass
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        try:
+            os.remove(bak)
+        except Exception:
+            pass
 
 
 def measure_pagination(docx_path):
