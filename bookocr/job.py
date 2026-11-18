@@ -1992,6 +1992,12 @@ class Job:
                 say(u'分页验收：每页已与原书对齐')
         elif over is not None:
             say(u'分页验收：页数与原书一致')
+        try:
+            _sc = export.scale_page_screenshot_images(self.out_path)
+            if _sc:
+                say(u'对象框：把 %d 张超大页图缩到页带内' % _sc)
+        except Exception as _e:
+            say(u'对象框：页图缩放失败（%s）' % _e)
         _final = export.measure_pagination(self.out_path)
         _pre_trim = self.out_path + '.pretrim'
         if _final is not None and _final.page_count != _exp:

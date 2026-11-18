@@ -2442,6 +2442,37 @@ def crop_page_screenshot_images(docx_path):
     return n
 
 
+def scale_page_screenshot_images(docx_path, max_ratio=0.62):
+    """Scale oversized page/table screenshots so they fit a page band.
+
+    This keeps the image object count unchanged; it only reduces height/width
+    so Word stops pushing the object onto an extra page.
+    """
+    from docx import Document as _Doc
+    from docx.shared import Emu as _Emu
+    try:
+        d = _Doc(docx_path)
+        sec = d.sections[0]
+        uh = sec.page_height - sec.top_margin - sec.bottom_margin
+    except Exception:
+        return 0
+    maxh = int(uh * max_ratio)
+    n = 0
+    for sh in d.inline_shapes:
+        try:
+            if int(sh.height) <= int(uh * 0.5):
+                continue
+            ratio = maxh / float(sh.height)
+            sh.height = _Emu(maxh)
+            sh.width = _Emu(int(int(sh.width) * ratio))
+            n += 1
+        except Exception:
+            pass
+    if n:
+        d.save(docx_path)
+    return n
+
+
 def measure_pagination(docx_path):
     """验收：Word 实际排版后，每个“原书第 N 页”是否正好占一个 Word 页。
 
