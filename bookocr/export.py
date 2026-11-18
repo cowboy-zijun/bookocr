@@ -2294,6 +2294,102 @@ def trim_orphan_object_pages(docx_path, expected_pages):
             pass
 
 
+def crop_page_screenshot_images(docx_path):
+    """Replace full-page screenshots with their non-white content bbox.
+
+    A tablepage screenshot carries a whole page (large white margins).  We
+    cannot leave it as a page screenshot; crop it to the actual table/figure
+    content and keep it as an inline object.  This does not make the table
+    editable, but it removes the "whole page image" object.
+    """
+    import io
+    from docx import Document as _Doc
+    from docx.oxml.ns import qn as _qn
+    try:
+        from PIL import Image as _Image
+    except Exception:
+        return 0
+    try:
+        d = _Doc(docx_path)
+    except Exception:
+        return 0
+    try:
+        sec = d.sections[0]
+        uw = sec.page_width - sec.left_margin - sec.right_margin
+        uh = sec.page_height - sec.top_margin - sec.bottom_margin
+    except Exception:
+        return 0
+    n = 0
+    for sh in list(d.inline_shapes):
+        try:
+            w, h = int(sh.width), int(sh.height)
+        except Exception:
+            continue
+        if not (uw and uh) or w < uw * 0.7 or h < uh * 0.45:
+            continue
+        inline = sh._inline
+        try:
+            blip = inline.graphic.graphicData.pic.blipFill.blip
+            rid = blip.embed
+            part = d.part.related_parts[rid]
+            im = _Image.open(io.BytesIO(part.blob)).convert('RGB')
+        except Exception:
+            continue
+        # non-white bbox
+        g = im.convert('L')
+        px = g.load()
+        W, H = im.size
+        # 行/列非白像素计数：稀疏水印/扫描噪点不算内容，
+        # 只取“有足够密度”的行列，才能裁掉整页白边。
+        rows = [0] * H
+        cols = [0] * W
+        step = max(1, min(W, H) // 700)
+        for yy in range(0, H, step):
+            for xx in range(0, W, step):
+                if px[xx, yy] < 242:
+                    rows[yy] += 1
+                    cols[xx] += 1
+        rthr = max(2, int((W / step) * 0.012))
+        cthr = max(2, int((H / step) * 0.012))
+        ys = [i for i, v in enumerate(rows) if v >= rthr]
+        xs = [i for i, v in enumerate(cols) if v >= cthr]
+        if not ys or not xs:
+            continue
+        minx, maxx = min(xs), max(xs)
+        miny, maxy = min(ys), max(ys)
+        if maxx <= minx or maxy <= miny:
+            continue
+        pad = 4
+        minx = max(0, minx - pad); miny = max(0, miny - pad)
+        maxx = min(W - 1, maxx + pad); maxy = min(H - 1, maxy + pad)
+        if (maxx - minx) * (maxy - miny) > W * H * 0.92:
+            continue
+        crop = im.crop((minx, miny, maxx + 1, maxy + 1))
+        bio = io.BytesIO(); crop.save(bio, format='PNG'); bio.seek(0)
+        try:
+            new_rid, _img = d.part.get_or_add_image(bio)
+            blip.embed = new_rid
+        except Exception:
+            continue
+        # keep width, scale height to cropped aspect
+        try:
+            old_cx = int(inline.extent.cx); old_cy = int(inline.extent.cy)
+            new_cy = int(old_cx * crop.size[1] / max(1, crop.size[0]))
+            # wp:extent 和 pic/a:ext 都要改，否则 Word 仍按整页图高度排。
+            ext0 = inline.find(_qn('wp:extent'))
+            if ext0 is not None:
+                ext0.set('cy', str(new_cy))
+            for ext in inline.iter():
+                if ext.tag.endswith('}ext'):
+                    ext.set('cy', str(new_cy))
+        except Exception:
+            pass
+        n += 1
+    if n:
+        d.save(docx_path)
+    return n
+
+
 def measure_pagination(docx_path):
     """验收：Word 实际排版后，每个“原书第 N 页”是否正好占一个 Word 页。
 
