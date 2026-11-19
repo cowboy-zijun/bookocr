@@ -855,6 +855,16 @@ def _emit_locked_page(doc, lines, cur_page, geom, body_size, body_ls, k,
                 p.add_run().add_break()
 
 
+def export_pagebook(pagebook, out_path, **kwargs):
+    """Export entry point for the unified page ledger.
+
+    The renderer still consumes block rows internally, but callers must hand
+    over PageBook, never a flat block list.  This is the migration seam for
+    PageBook -> export.
+    """
+    return export_docx(pagebook.to_blocks(), out_path, **kwargs)
+
+
 def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 page_scale=None, page_numbers=None, regions=None, geom=None,
                 lead_scale=None, columns=1, style_maps=None,

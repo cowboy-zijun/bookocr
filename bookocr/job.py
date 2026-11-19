@@ -1774,7 +1774,7 @@ class Job:
             say(u'逐页行距：%d 页有 frame pitch，范围 %.1f–%.1f pt'
                 % (len(_page_pitches), min(_page_pitches.values()),
                    max(_page_pitches.values())))
-        counts = export.export_docx(blocks, self.out_path, title=title, notes=notes,
+        counts = export.export_pagebook(_pb, self.out_path, title=title, notes=notes,
                                     appendix_from=appendix_from,
                                     page_numbers=page_numbers,
                                     regions=regions, geom=geom,
