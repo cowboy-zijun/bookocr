@@ -2473,6 +2473,37 @@ def scale_page_screenshot_images(docx_path, max_ratio=0.62):
     return n
 
 
+def fit_wide_object_images(docx_path, ratio=0.85):
+    """Scale only objects wider than the text column back into the frame.
+
+    Landscape table screenshots often exceed the page width; Word clips them.
+    This preserves the image count and aspect ratio, but fixes bbox width.
+    """
+    from docx import Document as _Doc
+    from docx.shared import Emu as _Emu
+    try:
+        d = _Doc(docx_path)
+        sec = d.sections[0]
+        uw = sec.page_width - sec.left_margin - sec.right_margin
+    except Exception:
+        return 0
+    maxw = int(uw * ratio)
+    n = 0
+    for sh in d.inline_shapes:
+        try:
+            if int(sh.width) <= int(uw * 0.95):
+                continue
+            r = maxw / float(sh.width)
+            sh.width = _Emu(maxw)
+            sh.height = _Emu(int(int(sh.height) * r))
+            n += 1
+        except Exception:
+            pass
+    if n:
+        d.save(docx_path)
+    return n
+
+
 def measure_pagination(docx_path):
     """验收：Word 实际排版后，每个“原书第 N 页”是否正好占一个 Word 页。
 
