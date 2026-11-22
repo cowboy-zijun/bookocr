@@ -894,6 +894,10 @@ def export_pagebook(pagebook, out_path, **kwargs):
             master.add_page_break()
             comp.append(_Doc(fp))
         comp.save(out_path)
+        try:
+            style_note_paragraphs(out_path)
+        except Exception:
+            pass
         return totals
     finally:
         _shutil.rmtree(tdir, ignore_errors=True)
