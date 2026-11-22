@@ -2070,6 +2070,7 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 # 列宽必须归一化到目标表宽：不足要放大，超出要缩小。
                 # 旧逻辑只缩小不放大，实测表 2 总和 8361 twips、
                 # 表 0/3 约 9509，导致表 2 明显偏窄、表头换行。
+                # 列宽最终必须回到目标表宽；desired 调整后仍可能总和偏小。
                 _ss = sum(widths) or 1.0
                 widths = [w * tw / _ss for w in widths]
                 # 固定表宽，禁止 Word auto 再分配列宽。
