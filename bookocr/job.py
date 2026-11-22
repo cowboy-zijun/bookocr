@@ -1176,10 +1176,10 @@ class Job:
                     continue
                 if _curp in snap_pages:
                     if _curp not in _done:
-                        _out.append(('tablepage',
+                        _out.append(('image',
                                      os.path.join(self.work_dir, 'tablepics',
                                                   'p%04d.png' % _curp),
-                                     [], 0))
+                                     [], 0, 0, None))
                         _done.add(_curp)
                     continue
                 _out.append(_b)
@@ -1971,8 +1971,8 @@ class Job:
                                     while _i < len(blocks) and \
                                             blocks[_i][0] != 'page':
                                         _i += 1
-                                    _fbb.append(('tablepage', _fb_paths[_p],
-                                                 [], 0, 0))
+                                    _fbb.append(('image', _fb_paths[_p],
+                                                 [], 0, 0, None))
                                 else:
                                     while _i < len(blocks) and \
                                             blocks[_i][0] != 'page':

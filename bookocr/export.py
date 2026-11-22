@@ -929,6 +929,10 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
     blocks = [list(b) for b in blocks]
     for b in blocks:
         b[1] = BAD.sub('', b[1])
+        # 旧 tablepage 整页对象统一降为 image；逐页渲染/兼容路径都不再走
+        # tablepage 分支。整页图缩放/收宽仍由后面的对象整理负责。
+        if b[0] == 'tablepage':
+            b[:] = ['image', b[1], [], 0, 0, None]
     if title:
         title = BAD.sub('', title)
     if notes:
