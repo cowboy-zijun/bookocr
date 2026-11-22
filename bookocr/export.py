@@ -856,13 +856,44 @@ def _emit_locked_page(doc, lines, cur_page, geom, body_size, body_ls, k,
 
 
 def export_pagebook(pagebook, out_path, **kwargs):
-    """Export entry point for the unified page ledger.
+    """PageBook -> docx, one PageDoc at a time.
 
-    The renderer still consumes block rows internally, but callers must hand
-    over PageBook, never a flat block list.  This is the migration seam for
-    PageBook -> export.
+    No PageBook.to_blocks() whole-book flattening: each PageDoc is rendered
+    into its own one-page docx, then composed with explicit page breaks.
     """
-    return export_docx(pagebook.to_blocks(), out_path, **kwargs)
+    import shutil as _shutil
+    import tempfile as _tempfile
+    from docx import Document as _Doc
+    from docxcompose.composer import Composer as _Composer
+    from .pagedoc import _page_marker as _mk
+    tdir = _tempfile.mkdtemp(prefix='bookocr_pages_')
+    paths = []
+    totals = {}
+    try:
+        for page in pagebook.pages:
+            if page.page_no <= 0:
+                continue
+            blocks = [_mk(page.page_no)] + list(page.blocks)
+            fp = os.path.join(tdir, 'p%04d.docx' % page.page_no)
+            kw = dict(kwargs)
+            if page.geometry:
+                kw.setdefault('geom', page.geometry)
+            c = export_docx(blocks, fp, **kw)
+            if isinstance(c, dict):
+                for k, v in c.items():
+                    totals[k] = totals.get(k, 0) + v
+            paths.append(fp)
+        if not paths:
+            raise RuntimeError('PageBook 没有可渲染页')
+        master = _Doc(paths[0])
+        comp = _Composer(master)
+        for fp in paths[1:]:
+            master.add_page_break()
+            comp.append(_Doc(fp))
+        comp.save(out_path)
+        return totals
+    finally:
+        _shutil.rmtree(tdir, ignore_errors=True)
 
 
 def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,

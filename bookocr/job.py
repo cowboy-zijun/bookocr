@@ -1699,6 +1699,14 @@ class Job:
         _pb = pagedoc.PageBook.from_blocks(
             blocks, geometry=geom, labels=page_sections,
             geometry_by_page=_page_geoms)
+        if os.environ.get('BOOKOCR_DUMP_PAGEBOOK'):
+            try:
+                import pickle as _pickle
+                with open(os.environ['BOOKOCR_DUMP_PAGEBOOK'], 'wb') as _pf:
+                    _pickle.dump(_pb, _pf)
+                say(u'PageBook dump：%s' % os.environ['BOOKOCR_DUMP_PAGEBOOK'])
+            except Exception as _e:
+                say(u'PageBook dump 失败：%s' % _e)
         _perrs = _pb.validate()
         if _perrs:
             say(u'PageDoc 警告：%s' % u'；'.join(_perrs[:4]))
