@@ -2026,7 +2026,7 @@ class Job:
             say(u'分页验收：物理页 %d / 原书 %d，尝试清掉孤儿对象页'
                 % (_final.page_count, _exp))
             try:
-                _rm, _n = export.trim_orphan_object_pages(self.out_path, _exp)
+                _rm, _n = export.trim_orphan_object_pages(self.out_path, _exp, allow_image_loss=paper_mode)
             except Exception as _e:
                 _rm, _n = 0, None
                 say(u'分页验收：清孤儿页异常（%s）' % _e)
@@ -2034,6 +2034,23 @@ class Job:
                 say(u'分页验收：清掉 %d 个孤儿对象页，物理页 %s'
                     % (_rm, _n))
             _final = export.measure_pagination(self.out_path)
+            # Word 重排后可能仍多页：继续做最多 2 轮孤儿页/重复页清理。
+            for _try in range(2):
+                if _final is None or _final.page_count == _exp:
+                    break
+                try:
+                    import time as _t2
+                    _t2.sleep(1.0)
+                    _rm2, _n2 = export.trim_orphan_object_pages(
+                        self.out_path, _exp, allow_image_loss=paper_mode)
+                    if not _rm2:
+                        break
+                    say(u'分页验收：第 %d 轮再清 %d 页，物理页 %s'
+                        % (_try + 2, _rm2, _n2))
+                    _final = export.measure_pagination(self.out_path)
+                except Exception as _e2:
+                    say(u'分页验收：追加清页异常（%s）' % _e2)
+                    break
         if _final is not None and _final.page_count != _exp:
             # Word 首次分页有时比保存后重开多算 1-3 页；再量一次，
             # 避免把实际 38 页的文件误杀。

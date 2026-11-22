@@ -2318,7 +2318,7 @@ class PaginationResult(set):
 _NOTE_MARKERS = (u'作者简介', u'通信作者', u'收稿日期', u'基金项目')
 
 
-def trim_orphan_object_pages(docx_path, expected_pages):
+def trim_orphan_object_pages(docx_path, expected_pages, allow_image_loss=False):
     """Trim pages with no page marker that are object fragments, not prose.
 
     A tablepage/figure fragment can be pushed onto its own page.  Such a page
@@ -2412,7 +2412,7 @@ def trim_orphan_object_pages(docx_path, expected_pages):
         except Exception:
             _n_inline1 = -1
         # 清孤儿页不能减少图对象；少一张就整体回滚。
-        if n != expected_pages or (_n_inline0 >= 0 and _n_inline1 < _n_inline0):
+        if n != expected_pages or (not allow_image_loss and _n_inline0 >= 0 and _n_inline1 < _n_inline0):
             _shutil.copy2(bak, docx_path)
             return 0, n
         return len(bad), n
