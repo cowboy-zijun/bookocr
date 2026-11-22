@@ -1717,6 +1717,9 @@ class Job:
             say(u'对象账本：%s，合计 %d，页级截图 %d'
                 % (_os.get('by_kind'), _os.get('total'),
                    _os.get('page_screenshots', 0)))
+            _tfs = _pb.table_frames()
+            say(u'TableFrame：%d 张，shape=%s'
+                % (len(_tfs), [(len(t.rows), t.cols) for t in _tfs]))
         _rv = self.opts.get('review')
         if _rv:
             try:

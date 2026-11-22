@@ -26,6 +26,17 @@ def _page_marker(no: int) -> List[Any]:
 
 
 @dataclass
+class TableFrame:
+    page: int
+    bbox: tuple
+    rows: list = field(default_factory=list)
+    cols: int = 0
+    widths: list = field(default_factory=list)
+    quality: float = 0.0
+    source: str = ''
+
+
+@dataclass
 class PageDoc:
     page_no: int
     blocks: List[Any] = field(default_factory=list)
@@ -50,6 +61,28 @@ class PageDoc:
             f = from_block(self.page_no, b)
             if f is not None:
                 out.append(f)
+        return out
+
+    def table_frames(self):
+        import json as _json
+        out = []
+        for b in self.blocks:
+            if not b or b[0] != 'tablegrid':
+                continue
+            try:
+                data = _json.loads(b[1]) if isinstance(b[1], str) else (b[1] or {})
+            except Exception:
+                continue
+            bb = b[7] if len(b) > 7 else None
+            if not bb:
+                continue
+            rows = data.get('rows') or []
+            out.append(TableFrame(
+                page=self.page_no, bbox=tuple(bb[:4]), rows=rows,
+                cols=max((len(r) for r in rows), default=0),
+                widths=list(data.get('widths') or []),
+                quality=float(data.get('_quality') or 0.0),
+                source='tablegrid'))
         return out
 
     @property
@@ -155,6 +188,12 @@ class PageBook:
     def object_summary(self):
         from .object_ledger import summary
         return summary(self.object_frames())
+
+    def table_frames(self):
+        out = []
+        for p in self.pages:
+            out.extend(p.table_frames())
+        return out
 
     def object_count(self) -> Dict[str, int]:
         out: Dict[str, int] = {}
