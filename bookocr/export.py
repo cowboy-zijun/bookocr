@@ -295,7 +295,10 @@ def make_style(size, tiers=None, small=None, toc_sz=None, body_pitch=None):
         'h4': dict(ea=u'黑体', size=hsize(3, max(10, round(size + 1))), align='l',
                    before=10, after=5, ls=lspt(1.3, hsize(3, size + 1))),
         'body': dict(ea=u'宋体', size=size, align='j', before=0, after=0,
-                     ind=round(size * 2), ls=lspt(1.5, size)),
+                     ind=round(size * 2),
+                     ls=(round(float(body_pitch), 1)
+                         if body_pitch and float(body_pitch) >= size * 1.1
+                         else lspt(1.5, size))),
         'header': dict(ea=u'宋体', size=8.5, align='c', before=0, after=0,
                        ls=lspt(1.1, 8.5)),
         'table': dict(ea=u'宋体', size=9.5, align='l', before=0, after=0,
@@ -946,7 +949,8 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
     # 文字层 span 的字号是 PDF 原值；geom 把超大扫描页缩到 A4 时，
     # 样式字号也要按同一比例缩，否则上标/小字会突然变大。
     style_scale = (body_size / src_body) if src_body else 1.0
-    STYLE = make_style(body_size, tiers, small=note_sz, toc_sz=toc_sz)
+    STYLE = make_style(body_size, tiers, small=note_sz, toc_sz=toc_sz,
+                       body_pitch=(geom or {}).get('pitch'))
     doc = Document()
     # python-docx 默认 doNotCompress：中文标点不做挤压，每行少排一两个字，
     # 整本书每页都多折一行。改成中文书通行的"标点压缩"，
