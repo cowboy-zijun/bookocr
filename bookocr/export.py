@@ -876,7 +876,15 @@ def export_pagebook(pagebook, out_path, **kwargs):
         for page in pagebook.pages:
             if page.page_no <= 0:
                 continue
-            blocks = [_mk(page.page_no)] + list(page.blocks)
+            # tablepage 是旧的整页对象路径；逐页渲染时降为普通 image 对象，
+            # 不再走整页 tablepage 分支。
+            _pbs = []
+            for _b in page.blocks:
+                if _b and _b[0] == 'tablepage':
+                    _pbs.append(('image', _b[1], [], 0, 0, None))
+                else:
+                    _pbs.append(_b)
+            blocks = [_mk(page.page_no)] + _pbs
             fp = os.path.join(tdir, 'p%04d.docx' % page.page_no)
             kw = dict(kwargs)
             if page.geometry:
