@@ -2360,6 +2360,11 @@ def trim_orphan_object_pages(docx_path, expected_pages, allow_image_loss=False):
             if len(t.strip()) > 500:
                 continue
             bad.append(i + 1)
+        # 末尾多出的 Blank/短页：没有页标且内容很少时，它就是孤儿页。
+        if not bad and pdf.page_count > expected_pages:
+            _last = pdf[pdf.page_count - 1].get_text()
+            if u'原书第' not in _last or len(_last.strip()) < 60:
+                bad.append(pdf.page_count)
         pdf.close()
         if not bad:
             _shutil.copy2(bak, docx_path)
@@ -2369,6 +2374,10 @@ def trim_orphan_object_pages(docx_path, expected_pages, allow_image_loss=False):
         app.Visible = False
         app.DisplayAlerts = 0
         doc = app.Documents.Open(docx_path, False, False)
+        try:
+            _n_page0 = int(doc.ComputeStatistics(2))
+        except Exception:
+            _n_page0 = expected_pages
         try:
             _n_inline0 = int(doc.InlineShapes.Count)
         except Exception:
@@ -2411,8 +2420,10 @@ def trim_orphan_object_pages(docx_path, expected_pages, allow_image_loss=False):
             _n_inline1 = int(doc.InlineShapes.Count)
         except Exception:
             _n_inline1 = -1
-        # 清孤儿页不能减少图对象；少一张就整体回滚。
-        if n != expected_pages or (not allow_image_loss and _n_inline0 >= 0 and _n_inline1 < _n_inline0):
+        # 只要页数在向目标靠近，就先保留这轮删页结果，让上层继续清；
+        # 只有删过头/图片数减少(paper 模式除外)/页数没下降时才回滚。
+        if (n < expected_pages or n >= _n_page0 or
+                (not allow_image_loss and _n_inline0 >= 0 and _n_inline1 < _n_inline0)):
             _shutil.copy2(bak, docx_path)
             return 0, n
         return len(bad), n

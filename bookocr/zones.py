@@ -1315,7 +1315,28 @@ def paper_unified_blocks(trees, pages=None, columns=2, objects=None):
         out.append(('frametree',
                     json.dumps({'page': p, 'node': payload},
                                ensure_ascii=False), [], None, 0))
-    return out
+    # 有对象但没有版式树的页（常见于整页图/表页）也必须占一个页标，
+    # 否则 paper 模式的页标数会少于源页数，后续压缩会按错页号。
+    for p in sorted(set(objects) - set(trees)):
+        objs = objects.get(p) or []
+        if not objs:
+            continue
+        out.append(('page', str(p), None, None))
+        ch = [_object_node(o) for o in objs]
+        payload = {'type': 'band', 'bbox': [0, 0, 3400, 5000],
+                   'children': ch}
+        out.append(('frametree',
+                    json.dumps({'page': p, 'node': payload},
+                               ensure_ascii=False), [], None, 0))
+    # 后补的对象页可能插在末尾；按页号重排，保证页标递增。
+    groups = []
+    for b in out:
+        if b and b[0] == 'page':
+            groups.append([b])
+        elif groups:
+            groups[-1].append(b)
+    groups.sort(key=lambda g: int(g[0][1]))
+    return [b for g in groups for b in g]
 
 
 def paper_tree_blocks(trees, pages=None, columns=2):
