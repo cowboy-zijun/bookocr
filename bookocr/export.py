@@ -67,7 +67,7 @@ def calibrate(blocks):
         if b[0] == 'page':
             cur = int(b[1])
             continue
-        if b[0] in ('header', 'image', 'tablepage', 'tablegrid'):
+        if b[0] in ('header', 'image', 'tablegrid'):
             continue            # 页眉/插图/截图/表格不算版心文字
         if cur:
             cnt[cur] = cnt.get(cur, 0) + len(b[1])
@@ -92,7 +92,7 @@ def source_body_size(blocks):
     """
     pairs = [(b[6], max(1, len(b[1] or ''))) for b in blocks
              if len(b) > 6 and b[6] and b[0] not in
-             ('page', 'image', 'tablepage', 'tablegrid')]
+             ('page', 'image', 'tablegrid')]
     if not pairs:
         return 0.0
     pairs.sort()
@@ -734,13 +734,13 @@ def _est_height(blist, page_no, body_size, body_ls, STYLE, appendix_from,
         role = classify(kind, text, hlevel, verified, page_no, appendix_from,
                         size=bsize, body_size=src_body or body_size,
                         tier=tier_index(bsize, tiers))
-        if role in ('image', 'tablepage'):
+        if role == 'image':
             ibox = b[7] if len(b) > 7 else None
             if geom and ibox:
                 hpt = (ibox[3] - ibox[1]) / 5000.0 * geom['page_h']
                 h += min(hpt, geom['page_h'] * 0.9) + 4
             else:
-                h += _img_height_pt(text, 11.4 if role == 'tablepage' else 10.8) + 12
+                h += _img_height_pt(text, 10.8) + 12
             continue
         if role == 'tablegrid':
             try:
@@ -957,7 +957,7 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 b[1], b[2] = _strip_note_markers(b[1], b[2], markers)
     # 文字层坏字符（£± 之类）标红：宁可显眼，也不能让用户当成原文引用
     for b in blocks:
-        if b[0] not in ('page', 'image', 'tablepage', 'tablegrid'):
+        if b[0] not in ('page', 'image', 'tablegrid'):
             b[1], b[2] = _mark_broken(b[1], b[2])
     body_size, body_ls = calibrate(blocks)
     src_body = source_body_size(blocks)
@@ -1937,7 +1937,7 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                       ea=u'宋体')
             plain.append(text)
             continue
-        if role in ('image', 'tablepage'):
+        if role == 'image':
             # 插图/数据页截图：按原书上的矩形定尺寸，居中，不参与文字样式
             ibox = b[7] if len(b) > 7 else None
             p = doc.add_paragraph()
@@ -1960,7 +1960,7 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                     # 不要设"固定行距"：行距比图矮时 Word 会把图顶到行外，
                     # 图和上下文就对不齐了。单倍行距由图片自己撑高。
                     p.paragraph_format.line_spacing = 1.0
-                elif geom and role == 'tablepage':
+                elif False:
                     # 整页截图没有原矩形可依：按版心宽度等比缩放；
                     # 横排页按横排版心宽度，图才不会被压成一条。
                     _wcm = _page_tw / 28.3465 - 0.2
@@ -1969,11 +1969,11 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                         _wcm = _wcm * (_page_avail - 4) / _hpt
                     # 整页截图不要再跟 page_scale 一起缩：它已经按页高
                     # 等比缩过；再乘 k 会缩成半页大，四周全是空白。
-                    if k < 1.0 and role != 'tablepage':
+                    if k < 1.0:
                         _wcm *= max(0.55, k)
                     p.add_run().add_picture(text, width=Cm(_wcm))
                 else:
-                    _w = (11.4 if role == 'tablepage' else 10.8)
+                    _w = (10.8)
                     # 图片不能比版心宽：按原书版式排时版心只有 10.2cm，
                     # 11.4cm 的截图会被挤到下一页，这一页就"超页"了
                     _w = min(_w, text_w / 28.3465 - 0.2)
