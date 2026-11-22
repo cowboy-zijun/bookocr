@@ -1239,12 +1239,27 @@ class Job:
                                     max(l['x1'] for l in _rows),
                                     (_x0 + _wsum) if _wsum > 20 else 0.0)
                                 _bb = (_x0, hit[0], _x1, hit[1])
-                            _tir = table_ir.TableIR.from_data(
-                                hit[2], bbox=_bb, source='page')
-                            out_seg.append(('tablegrid',
-                                            json.dumps(_tir.to_data(),
-                                                       ensure_ascii=False),
-                                            [], hit[0], 0, _bb))
+                            # 统一策略：表格只保留原表 bbox 截图，不再识别文本。
+                            _tpath = ''
+                            if _bb:
+                                try:
+                                    _tpath = engine.crop_region(
+                                        self.pdf_path, _pno, list(_bb),
+                                        os.path.join(self.work_dir, 'images'),
+                                        dpi=200,
+                                        suffix='tbl_as_img_%02d' % len(emitted))
+                                except Exception:
+                                    _tpath = ''
+                            if _tpath:
+                                out_seg.append(('image', _tpath, [], hit[0],
+                                                0, list(_bb)))
+                            else:
+                                _tir = table_ir.TableIR.from_data(
+                                    hit[2], bbox=_bb, source='page')
+                                out_seg.append(('tablegrid',
+                                                json.dumps(_tir.to_data(),
+                                                           ensure_ascii=False),
+                                                [], hit[0], 0, _bb))
                             emitted.add(hit[0])
                             _ins_pages.append(_pno)
                         continue
@@ -1255,6 +1270,43 @@ class Job:
                 marks = {int(b[1]): i for i, b in enumerate(blocks)
                          if b[0] == 'page'}
             say(u'真表格插入页：%s' % str(sorted(set(_ins_pages))))
+
+        # 兜底：任何仍残留的 tablegrid 也统一裁成表格 bbox 图，不再输出文本表。
+        try:
+            _curp2 = 0
+            _conv2 = 0
+            for _bi2, _b2 in enumerate(blocks):
+                if _b2 and _b2[0] == 'page':
+                    _curp2 = int(_b2[1])
+                    continue
+                if not _b2 or _b2[0] != 'tablegrid':
+                    continue
+                _bb2 = _b2[7] if len(_b2) > 7 and _b2[7] else None
+                if not _bb2:
+                    # 无 bbox 的兜底表：用同页 page_tabs 的表格区域补。
+                    _by2 = _b2[3] if len(_b2) > 3 else 0
+                    for _ty0, _ty1, _td in (page_tabs.get(_curp2) or []):
+                        if _ty0 - 80 <= _by2 <= _ty1 + 80:
+                            if isinstance(_td, dict):
+                                _bb2 = _td.get('bbox')
+                            break
+                if not _bb2:
+                    continue
+                try:
+                    _p2 = engine.crop_region(
+                        self.pdf_path, _curp2, list(_bb2),
+                        os.path.join(self.work_dir, 'images'), dpi=200,
+                        suffix='tbl_final_%02d' % _bi2)
+                except Exception:
+                    _p2 = ''
+                if _p2:
+                    blocks[_bi2] = ('image', _p2, [], _b2[3] if len(_b2) > 3 else 0,
+                                    0, list(_bb2))
+                    _conv2 += 1
+            if _conv2:
+                say(u'表格截图兜底：%d 张' % _conv2)
+        except Exception as _e2:
+            say(u'表格截图兜底失败：%s' % _e2)
 
         _tab_pages = set(pre_tabs) & set(landscape_pages)
         if _tab_pages:
@@ -1852,12 +1904,22 @@ class Job:
             # 与 PDF 页序一一对应，直接用；不能拿印刷页码反查——
             # 前置页与正文可能都从 1 编号，页码会重复。
             over_pdf = set(over)
+            # 含表/图对象的页不压字号：先让对象缩放去解决高度，
+            # 否则 p8/p9 这种表页正文会被压成蚂蚁字。
+            _obj_pages = set()
+            _cp = 0
+            for _bb in blocks:
+                if _bb and _bb[0] == 'page':
+                    _cp = int(_bb[1])
+                elif _bb and _bb[0] in ('image', 'tablegrid', 'tablepage'):
+                    _obj_pages.add(_cp)
+            _fit_pages = set(over_pdf)
             say(u'分页验收：%d 页超出原书页数 [%s]，先微压行距重排…'
                 % (len(over_pdf), _plist(over_pdf)))
             counts = export.export_docx(
                 blocks, self.out_path, title=title, notes=notes,
                 appendix_from=appendix_from,
-                lead_scale={p: 0.94 for p in over_pdf},
+                lead_scale={p: 0.94 for p in _fit_pages},
                 page_numbers=page_numbers, regions=regions, geom=geom,
                 columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
             left = export.measure_pagination(self.out_path)
@@ -1868,7 +1930,7 @@ class Job:
                 counts = export.export_docx(
                     blocks, self.out_path, title=title, notes=notes,
                     appendix_from=appendix_from,
-                    lead_scale={p: 0.90 for p in over_pdf},
+                    lead_scale={p: 0.90 for p in _fit_pages},
                     page_scale={p: 0.9 for p in set(left)},
                     page_numbers=page_numbers, regions=regions, geom=geom,
                     columns=columns, style_maps=style_maps, landscape_pages=landscape_pages, locked_pages=locked_pages, page_sections=page_sections, page_geometries=page_geometries, page_pitches=_page_pitches)
@@ -1877,7 +1939,7 @@ class Job:
                 # 否则这一两行会被挤成下一页，出现“整页只有一句话”的
                 # 空白页。压到下限仍放不下，才走后面的行级/截图回退。
                 if left2:
-                    _fit_lead = {p: 0.90 for p in over_pdf}
+                    _fit_lead = {p: 0.90 for p in _fit_pages}
                     _fit_page = {p: 0.90 for p in set(left)}
                     for _step in range(5):
                         if not left2:
