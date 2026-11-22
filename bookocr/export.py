@@ -1943,7 +1943,10 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
             prev_head = None
         if role == 'cap':
             p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            # 图注独立成段并居中；表题仍可按源版式左/中。
+            p.alignment = (WD_ALIGN_PARAGRAPH.CENTER
+                           if re.match(u'^(图|Fig|Figure)', text.strip())
+                           else WD_ALIGN_PARAGRAPH.LEFT)
             pf = p.paragraph_format
             pf.space_before = Pt(0)
             pf.space_after = Pt(1)

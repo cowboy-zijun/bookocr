@@ -26,6 +26,16 @@ def _page_marker(no: int) -> List[Any]:
 
 
 @dataclass
+class CaptionFrame:
+    page: int
+    text: str
+    role: str = 'caption'
+    bbox: tuple = ()
+    y0: float = 0.0
+    target: str = ''
+
+
+@dataclass
 class TableFrame:
     page: int
     bbox: tuple
@@ -61,6 +71,25 @@ class PageDoc:
             f = from_block(self.page_no, b)
             if f is not None:
                 out.append(f)
+        return out
+
+    def caption_frames(self):
+        import re as _re
+        out = []
+        for b in self.blocks:
+            if not b:
+                continue
+            text = (b[1] or '') if len(b) > 1 else ''
+            if not text:
+                continue
+            if not _re.match(u'^(图|表|Fig\\.?|Figure|Table)\\s*[0-9一二三四五六七八九十]', text.strip()):
+                continue
+            bb = b[7] if len(b) > 7 and b[7] else ()
+            y0 = b[3] if len(b) > 3 and isinstance(b[3], (int, float)) else 0.0
+            role = 'figure_caption' if _re.match(u'^(图|Fig|Figure)', text.strip()) else 'table_caption'
+            out.append(CaptionFrame(page=self.page_no, text=text,
+                                    role=role, bbox=tuple(bb[:4]) if bb else (),
+                                    y0=float(y0)))
         return out
 
     def table_frames(self):
@@ -193,6 +222,12 @@ class PageBook:
         out = []
         for p in self.pages:
             out.extend(p.table_frames())
+        return out
+
+    def caption_frames(self):
+        out = []
+        for p in self.pages:
+            out.extend(p.caption_frames())
         return out
 
     def object_count(self) -> Dict[str, int]:

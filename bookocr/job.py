@@ -1725,6 +1725,11 @@ class Job:
             _tfs = _pb.table_frames()
             say(u'TableFrame：%d 张，shape=%s'
                 % (len(_tfs), [(len(t.rows), t.cols) for t in _tfs]))
+            _cfs = _pb.caption_frames()
+            say(u'CaptionFrame：%d 个（图注 %d / 表题 %d）'
+                % (len(_cfs),
+                   sum(1 for c in _cfs if c.role == 'figure_caption'),
+                   sum(1 for c in _cfs if c.role == 'table_caption')))
         _rv = self.opts.get('review')
         if _rv:
             try:
