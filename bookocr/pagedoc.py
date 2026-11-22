@@ -53,6 +53,7 @@ class PageDoc:
     geometry: Optional[dict] = None
     label: Optional[str] = None
     source: str = ''
+    caption_boxes: Dict[str, Tuple[float, float, float, float]] = field(default_factory=dict)
 
     def add(self, block: Any) -> None:
         self.blocks.append(block)

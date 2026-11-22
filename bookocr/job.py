@@ -1712,6 +1712,29 @@ class Job:
                 say(u'PageBook dump：%s' % os.environ['BOOKOCR_DUMP_PAGEBOOK'])
             except Exception as _e:
                 say(u'PageBook dump 失败：%s' % _e)
+        # 给图注/表题附源行 bbox，供独立 CaptionFrame 定位。
+        try:
+            import re as _re_cap
+            for _pd in _pb.pages:
+                _lines = pages.get(_pd.page_no) or []
+                for _cf in _pd.caption_frames():
+                    _t = _re_cap.sub(r'\s+', '', _cf.text or '')
+                    _hits, _acc = [], ''
+                    for _l in _lines:
+                        _lt = _re_cap.sub(r'\s+', '', _l.get('text') or '')
+                        if _lt and (_lt in _t or _t[:max(1, len(_lt))] == _lt):
+                            _hits.append(_l)
+                            _acc += _lt
+                            if len(_acc) >= len(_t):
+                                break
+                    if _hits:
+                        _pd.caption_boxes[_cf.text] = (
+                            min(x['x0'] for x in _hits),
+                            min(x['y0'] for x in _hits),
+                            max(x['x1'] for x in _hits),
+                            max(x['y1'] for x in _hits))
+        except Exception as _e:
+            say(u'CaptionFrame bbox 失败：%s' % _e)
         _perrs = _pb.validate()
         if _perrs:
             say(u'PageDoc 警告：%s' % u'；'.join(_perrs[:4]))

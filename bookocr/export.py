@@ -889,6 +889,8 @@ def export_pagebook(pagebook, out_path, **kwargs):
             kw = dict(kwargs)
             if page.geometry:
                 kw.setdefault('geom', page.geometry)
+            if page.caption_boxes:
+                kw.setdefault('caption_boxes', dict(page.caption_boxes))
             _tfs = page.table_frames()
             _only_table = bool(_tfs) and all(
                 (b[0] in ('tablegrid', 'table') or b[0] == 'page')
@@ -942,7 +944,8 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
                 page_scale=None, page_numbers=None, regions=None, geom=None,
                 lead_scale=None, columns=1, style_maps=None,
                 landscape_pages=None, locked_pages=None, page_sections=None,
-                page_geometries=None, page_pitches=None, table_top_gap=None):
+                page_geometries=None, page_pitches=None, table_top_gap=None,
+                caption_boxes=None):
     """blocks: [kind, text, mask, verified, hlevel]（含 page 标记）。
 
     appendix_from: 附录/注释/索引区起始页（自动识别），此后的正文块
@@ -1953,6 +1956,25 @@ def export_docx(blocks, out_path, title=None, notes=None, appendix_from=0,
             pf.line_spacing = Pt(max(10.0, (bsize or 12.0) * 1.25))
             _set_font(p.add_run(text), size=max(8.0, body_size * k),
                       ea=u'宋体')
+            # 有源行 bbox 时，图注/表题单独成页面文本框，和图片是兄弟框。
+            _cb = (caption_boxes or {}).get(text) if caption_boxes else None
+            if _cb and geom:
+                try:
+                    _sx = (geom.get('page_w') or 595.3) / 3400.0
+                    _sy = (geom.get('page_h') or 841.9) / 5000.0
+                    _x0 = _cb[0] * _sx - (geom.get('left') or 0.0)
+                    _y0 = _cb[1] * _sy
+                    _cw = max(20.0, (_cb[2] - _cb[0]) * _sx)
+                    _ch = max(10.0, (_cb[3] - _cb[1]) * _sy)
+                    _set_page_frame(p, _x0, _y0, _cw, _ch, h_rule='atLeast')
+                    # framePr 不占流高，补同高空段给后续正文。
+                    _sp = doc.add_paragraph()
+                    _sp.paragraph_format.space_before = Pt(0)
+                    _sp.paragraph_format.space_after = Pt(0)
+                    _sp.paragraph_format.line_spacing = Pt(_ch)
+                    p._element.addnext(_sp._p)
+                except Exception:
+                    pass
             plain.append(text)
             continue
         if role == 'image':
