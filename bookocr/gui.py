@@ -375,7 +375,21 @@ class App(tk.Tk):
             pdf, out, work, opts = self._args
             from . import job          # 重库延迟导入放后台，主窗口不卡
             self.job = job.Job(pdf, out, work, opts)
-            ok = self.job.run(log=self._log, progress=self._progress)
+            try:
+                ok = self.job.run(log=self._log, progress=self._progress)
+            except Exception as _e:
+                # 论文模式旧树失败时，自动回退到通用 PageBook 逐页渲染；
+                # 产物仍是同一份 Word，不再直接把 40/38 抛给用户。
+                if opts.get('mode') != 'paper':
+                    raise
+                self._log(u'[回退] 论文模式版面失败：%s' % _e)
+                self._log(u'[回退] 改用通用 PageBook 逐页渲染重新生成…')
+                opts2 = dict(opts)
+                opts2['mode'] = 'book'
+                opts2['two_column'] = True
+                work2 = work + u'_bookfallback'
+                self.job = job.Job(pdf, out, work2, opts2)
+                ok = self.job.run(log=self._log, progress=self._progress)
             self.q.put(('done', ok))
         except Exception as e:
             import traceback
