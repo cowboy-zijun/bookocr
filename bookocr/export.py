@@ -893,12 +893,27 @@ def export_pagebook(pagebook, out_path, **kwargs):
             _only_table = bool(_tfs) and all(
                 (b[0] in ('tablegrid', 'table') or b[0] == 'page')
                 for b in page.blocks if b)
-            if _only_table and page.geometry:
+            if page.geometry and _tfs:
                 try:
                     _ph = float(page.geometry.get('page_h') or 841.9)
                     _top = float(page.geometry.get('top') or 0)
+                    # 找表格块前面的块，用源 y 差作为表格前 gap；
+                    # 表格独占页则从页顶算。
+                    _prev_y = None
+                    for _bi, _b in enumerate(page.blocks):
+                        if _b and _b[0] == 'tablegrid':
+                            break
+                        if _b and len(_b) > 3 and isinstance(_b[3], (int, float)):
+                            _prev_y = float(_b[3])
+                    else:
+                        _bi = -1
                     _ty = _tfs[0].bbox[1] / 5000.0 * _ph
-                    kw.setdefault('table_top_gap', max(0.0, _ty - _top))
+                    if _prev_y is None:
+                        _gap = _ty - _top
+                    else:
+                        _gap = (_tfs[0].bbox[1] - _prev_y) / 5000.0 * _ph
+                    if -5.0 <= _gap <= 90.0:
+                        kw.setdefault('table_top_gap', max(0.0, _gap))
                 except Exception:
                     pass
             c = export_docx(blocks, fp, **kw)
