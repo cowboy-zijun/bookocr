@@ -341,7 +341,8 @@ class App(tk.Tk):
                             '_bookocr_工作目录')
         _paper = u'论文' in self.doctype_var.get()
         opts = {
-            'two_column': (not _paper) and self.twocol_var.get(),
+            # 论文模式现在也走 PageBook 逐页渲染；双栏重排使用通用逻辑。
+            'two_column': True,
             'align_mode': (u'manual' if self.align_mode_var.get() == u'手动选文件'
                            else u'auto' if self.align_mode_var.get() == u'自动搜索'
                            else u'off'),

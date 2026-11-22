@@ -355,7 +355,12 @@ class Job:
         def say(m):
             if log:
                 log(m)
-        paper_mode = self.opts.get('mode') == 'paper'
+        # 论文/期刊模式也走统一的 PageBook 逐页渲染；旧的 paper 树
+        # 只保留作历史兼容，不再作为默认版面生成器。
+        _paper_requested = self.opts.get('mode') == 'paper'
+        paper_mode = False
+        if _paper_requested:
+            say(u'论文模式：使用统一 PageBook 逐页渲染（不再走旧 paper 树）')
         import pymupdf
         doc = pymupdf.open(self.pdf_path)
         n_pages = doc.page_count
